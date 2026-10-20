@@ -1,117 +1,97 @@
-# DevAgent-Harness
+# DevAgent-Harness V0.2
 
-基于 DeepSeek Harness 的通用软件工程助手基础，当前交付 **M0 + M1**。
-一个框架无关的工程核心，通过项目适配器识别 Python、Node.js/TypeScript、C#/.NET；
-通过独立只读 MCP Server 向 DSH 提供项目上下文和诊断能力。
+基于官方 DeepSeek Harness 的通用工程助手。已实现并验证**基础工具、隔离执行和离线工作流**；真实模型在线验收仍被认证阻塞，**AI Functional MVP 尚未完成验收**。
 
-## 安装与检查
+相比 M0/M1，新增外部只读注册、有限源码/规则查询、过滤 Git 快照、容器执行、签名证据、诊断、计划门禁、任务和 Patch 报告。DSH 固定 `0.2.1-rc.2`，官方 Codex provider 自带 payload `0.153.4`，没有自建模型客户端或 Agent Loop。
 
-需要 Node.js **22.13+（22.x）、24.x 或 26+**、npm、Git。推荐 Node 24 LTS。
-直接依赖锁定，提交的 `pnpm-lock.yaml` 锁定传递依赖。
-无需全局安装 pnpm；以下示例均使用锁定版本：
+## 安装
+
+需要 Git、Node 24（兼容范围见 package.json）、Docker Linux engine、seccomp/cgroup 限额。
 
 ```powershell
 Set-Location E:\Agent_Harness
 npx --yes pnpm@10.32.1 install --frozen-lockfile
 npx --yes pnpm@10.32.1 build
-npx --yes pnpm@10.32.1 devagent doctor
+docker pull node:24-bookworm-slim
+node apps/cli/dist/main.js isolation configure --image node:24-bookworm-slim
+node apps/cli/dist/main.js doctor
 ```
 
-如果已安装 pnpm 10.32.1，可直接使用 `pnpm`。
-`devagent` 是工作区 CLI 包的 bin，也可直接调用
-`node E:\Agent_Harness\apps\cli\dist\main.js`，无需全局链接。
-`doctor` 返回 JSON，分别显示工具版本和外部集成状态。
-通过直接 `node` 启动时，未全局安装的 pnpm 可能显示 unavailable；通过上述 npx 启动则可用。
-诊断缺项返回 `attention`，命令本身完成时退出码为 0；参数/读取失败退出码为 1。
+镜像解析为本机不可变 image ID，实际探测非 root、只读根、禁网和资源约束；失败返回 blocked，绝不回退宿主 Shell。默认状态目录 `.devagent-state/` 被 Git 忽略；`--home <绝对路径>` 可隔离状态。已安装依赖与镜像后，离线验收无需模型和联网执行项目代码。
 
-## 接入项目
+## 只读接入与真实代码查询
 
 ```powershell
-# 先预览，不写文件、不执行目标项目脚本
-npx --yes pnpm@10.32.1 devagent init --path "D:\work\my-project" --dry-run
-# 创建 .devagent/project.yaml，已存在时拒绝覆盖
-npx --yes pnpm@10.32.1 devagent init --path "D:\work\my-project"
-npx --yes pnpm@10.32.1 devagent inspect --path "D:\work\my-project"
+node apps/cli/dist/main.js project add --path D:\Kyle\auto-label-studio --read-only --rules
+node apps/cli/dist/main.js project list
+node apps/cli/dist/main.js project inspect --id <project-id>
+node apps/cli/dist/main.js code search --project <project-id> --query ProductWorker
+node apps/cli/dist/main.js code read --project <project-id> --file src/auto_label_studio/application/product_worker.py --start 21 --end 49
+node apps/cli/dist/main.js project plan --id <project-id> --prompt "训练任务状态展示"
+node apps/cli/dist/main.js project fingerprint --id <project-id>
 ```
 
-Linux 使用相同命令和本机绝对路径，例如 `--path /work/my-project`。
-识别结果来自有限深度的清单和目录元数据，不读取源码正文、日志、`.env`、数据库或数据集。
-命令从现有脚本/依赖推导，全部标记 `pending`。本版不执行、验证或自动晋升这些命令。
-已人工验证的命令必须附带提交版本、执行时间、退出码 0 和证据引用。
-配置契约见 [configuration.md](docs/configuration.md)。
+注册、计划与证据仅写 Harness。原项目不创建 `.devagent`，规则需要 `--rules` 授权。真实 ALS/Pollen 本轮始终 local-only，不发送远端；本地静态计划明确标记 modelCalls 0。Graphify 原目录不运行或刷新，查询报告降级及限制。
 
-## 只读 MCP
+旧版 init/inspect/runtime 与双工具 MCP 继续兼容；`init --path` 会写项目配置，不用于只读业务接入。旧契约见 [configuration.md](docs/configuration.md)。
 
-先初始化目标项目，通过 `inspect` 获得 `projectId`，然后启动：
+## 快照、任务与证据
 
 ```powershell
-node packages/diagnostics-mcp/dist/main.js --allow-project "D:\work\my-project"
+node apps/cli/dist/main.js workspace create --project <project-id> --revision HEAD
+node apps/cli/dist/main.js workspace inspect --id <workspace-id>
+node apps/cli/dist/main.js workspace diff --id <workspace-id>
 ```
 
-每个 `--allow-project` 授权一个项目，最多 20 个。工具输入仅接受项目 ID，
-客户端不能传入任意文件路径。两个工具是：
+快照基于明确 Commit，不带入未提交改动；过滤数据库、缓存、数据集、权重和可识别敏感内容，拒绝链接/submodule，建立独立 Git 基线，不修改源 Git。过滤可能使真实工程无法构建，必须报告限制。
 
-- `get_project_context`：项目、技术栈、组件、来源、有限目录结构。
-- `get_project_capabilities`：日志元数据、测试命令的验证状态、UI/设备支持和能力缺口。
-
-stdout 专用于 MCP；诊断写 stderr。工具不执行命令、不读日志内容、不访问网络。
-项目 ID 绑定本机规范路径，移动项目后 ID 会变化。授权集合仅存在于当前进程，不写全局注册表。
-
-## DSH 最小启动
+人工批准固定 argv；模型不能批准命令。下面示例用于已批准分享的专用 fixture：
 
 ```powershell
-npx --yes pnpm@10.32.1 devagent runtime prepare --path "D:\work\my-project"
-# 校验官方 profile 合成结果，不发起模型请求
-npx --yes pnpm@10.32.1 devagent runtime check --path "D:\work\my-project"
-# 凭据通过受信任的进程环境配置后，显式执行一个模型任务
-npx --yes pnpm@10.32.1 devagent runtime run --path "D:\work\my-project" --task "分析当前项目的能力缺口"
+node apps/cli/dist/main.js command approve --workspace <workspace-id> --id acceptance --executable node --args-file fixtures/functional-mvp/test-argv.json
+node apps/cli/dist/main.js task run --project <fixture-project-id> --workspace <workspace-id> --mode isolated --prompt "修复 progress 与 statusLabel；批准命令 acceptance；不得修改测试"
+node apps/cli/dist/main.js task status --id <task-id>
+node apps/cli/dist/main.js task report --id <task-id>
+node apps/cli/dist/main.js evidence list --task <task-id>
+node apps/cli/dist/main.js evidence export --task <task-id>
 ```
 
-默认运行目录是本仓库忽略的 `.dsh-local/runtime`，支持 `--output <新目录>` 隔离多个实例。
-prepare 拒绝覆盖现有运行目录；check/run 校验它与目标项目的绑定。
-生成官方 `dsh.profile.bundles` 清单和 `cordis.patch.yml`，复用 base/headless、官方 MCP Client、
-Skills registry 和 filesystem provider。没有自建 Agent Loop，也不修改上游。
-默认只暴露 Skills 加载工具和两个只读 MCP 工具，关闭 shell、文件读写、网页、PTC、子 Agent
-及插件管理工具；禁用遥测。项目/用户默认 Skills 根目录关闭，只挂载本仓库 Skills。
-DSH 自带的平台诊断 Skill 仍可能出现在目录中。
+`test-argv.json` 指向只读 `/grader/acceptance.test.mjs`，完整 grader 准备由下方 eval 自动完成。自有测试可使用 JSON argv `['--test','tests/acceptance.test.mjs']`（文件应为标准 JSON 双引号）。发现命令不等于批准，批准不等于执行成功；manifest 改变使批准失效。计划通过后才能改代码，最多执行 3 次命令，所有批准命令都需最终版本的成功证据。只输出 Patch，绝不回写原工程。
 
-DSH 启动和模型认证交给官方机制（例如进程环境中的 `DEEPSEEK_API_KEY`），
-不要在仓库、配置或命令历史中保存实际密钥。CLI 不要求或打印密钥。
-**真实模型调用尚未验证**。`runtime run` 会把用户任务和工具返回的元数据发送给已配置的模型；
-只应对已批准分享元数据的项目使用它。DSH 自身可能读取其原生环境/凭据配置，
-与本项目的只读 inspect 扫描是两个独立边界。
+## 官方认证与在线任务
 
-官方 Codex 可选配置见 [codex.patch.example.yml](templates/codex.patch.example.yml)。
-默认不启用。包附带 Codex **0.153.4**，与主机 CLI 的版本独立；已验证 payload 可启动并输出版本，
-**尚未验证认证、真实委派或模型请求**。`permissionMode: never` 会沿用原生沙箱配置，
-不等于强制只读；启用前应在独立环境配置原生只读权限并审阅 Profile。
-prepare 同时生成未启用的 `codex.optional.patch.yml`，其中入口已经解析为本机绝对路径。
-审阅权限并准备认证后，可通过原生 DSH 的 `--patch <该文件绝对路径>` 显式选择；
-需设置 `DSH_HOME` 为对应运行目录，并在目标项目目录调用本仓库锁定的 DSH CLI。
-这一操作会启用真实委派能力，参见 [架构决策](docs/decisions/001-runtime-and-boundaries.md)。
-
-## Skills、知识和验证
-
-三个 Skills 位于 `skills/<name>/SKILL.md`，符合所选 DSH 的 YAML frontmatter 和单层发现规范。
-`feature-planning` 会加载 `observability-design`，按 JSON Schema 输出包含实施、观测、诊断、
-回归和能力缺口的计划。只读运行时缺少执行工具时，onboarding 会返回可由人执行的 CLI 命令。
-知识仅提供三类存储/引用/版本契约，无向量库、长期检索或自动晋升，见
-[knowledge.md](docs/knowledge.md)。
+DSH 仅使用当前受信任进程环境中明确配置的 `DEEPSEEK_API_KEY`。请使用自己的安全凭据管理方式，不把密钥放入仓库、参数、聊天或日志；Harness 不扫描磁盘找 Key。只允许注册时带 `--fixture --share-fixture` 的专用 mock 工程在线。
 
 ```powershell
-npx --yes pnpm@10.32.1 typecheck
-npx --yes pnpm@10.32.1 lint
-npx --yes pnpm@10.32.1 test
-npx --yes pnpm@10.32.1 build
-npx --yes pnpm@10.32.1 test:integration
+node apps/cli/dist/main.js task smoke --project <fixture-project-id> --prompt "查询 progress；返回 taskId 和实际工具结果中的 sourcePath"
 ```
 
-安装依赖后，以上测试均无需网络和模型凭据。集成测试使用临时模拟工程和标准 MCP SDK，
-包括旧版握手、现代协议发现、官方 DSH 启动与真实 MCP Client 调用。
-Fixtures 仅用于识别测试，不是可部署业务系统，不在本项目中安装其框架依赖或构建 WPF。
-完整检查结果、未验证事项和限制见 [verification.md](docs/verification.md)。
+Smoke 检查真实 DSH JSON 事件、成功 MCP 调用和结构化来源；进程 exit 0 不足以通过。本轮用户选择 DSH 暂留 blocked_by_auth。
 
-- [架构与模块列表](docs/architecture.md)
-- [安全与授权边界](docs/security.md)
-- [依赖和上游资料](docs/upstream-research.md)
-- [M2～M4 后续方向](docs/roadmap.md)
+Codex 使用官方 `@deepseek-ai/dsh-subagent-codex`，独立容器与认证目录；构建上下文仅 installer/codex，专用 lockfile 固定依赖与 base digest：
+
+```powershell
+docker build --tag devagent-codex:0.153.4 installer/codex
+node apps/cli/dist/main.js codex configure --image devagent-codex:0.153.4
+node apps/cli/dist/main.js codex login
+node apps/cli/dist/main.js codex status
+node apps/cli/dist/main.js task run --project <fixture-project-id> --workspace <workspace-id> --codex --prompt "修复模拟工程；不得修改测试"
+```
+
+在交互终端执行 login，使用官方设备认证，仅写 Harness 独立目录，不导入主机现有认证或修改全局配置。当前独立目录未登录，原生检查为 blocked_by_auth。DSH 有 Key 时通过 MCP 委派；没有 DSH Key 时可单独验收 DSH runtime 的 Codex provider。两条已认证路径均尚未实测。模型编辑容器关闭项目 Shell，测试转交另一禁网执行器，详见 [runtime-profiles.md](docs/runtime-profiles.md)。
+
+## 可复现验收
+
+```powershell
+npx --yes pnpm@10.32.1 check
+node apps/cli/dist/main.js eval --suite functional-mvp
+node apps/cli/dist/main.js eval --suite functional-mvp --als-path D:\Kyle\auto-label-studio --pollen-path <已授权Pollen源码副本绝对路径>
+# 认证准备后显式调用真实模型，仅模拟工程，可能计费
+node apps/cli/dist/main.js eval --suite functional-mvp --online
+```
+
+离线 eval 复现真实失败，再用**确定性修复**验证基础设施，不计为 Agent 自主修复。在线 eval 使用全新 Bug 快照。结果保存在 `.devagent-state/reports/functional-latest.json` / `.md`，明确区分 Unit、Integration、Offline E2E、Online E2E、Real Project Validation；未提供真实路径的对应层 blocked。显式在线验收 blocked 返回退出码 2，失败返回 1；不能把 blocked 算 passed。task run 默认 analysis，`--mode isolated` 或 `--codex` 显式选择隔离编码。尚无直接 Codex 同任务效率对照。
+
+- [实际验收结果](docs/verification.md) · [功能边界](docs/functional-mvp.md)
+- [架构](docs/architecture.md) · [安全](docs/security.md) · [隔离](docs/workspace-isolation.md)
+- [证据契约](docs/evidence-contract.md) · [真实项目验证](docs/real-project-validation.md) · [后续工作](docs/roadmap.md)

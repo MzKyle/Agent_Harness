@@ -1,58 +1,23 @@
-# 架构（M0 + M1）
+# V0.2 架构与当前实现
 
-## 模块边界
+保留 monorepo 与 M0/M1 API。Core 不依赖 DSH。
 
-```text
-CLI ──> adapters ──> core
- │                    ▲
- └──> dsh-bridge       │
-       │              │
-       └ DSH 官方 MCP Client ─stdio─> diagnostics-mcp
-```
-
-| 路径 | 实际职责 |
+| 模块 | 实际职责 |
 | --- | --- |
-| apps/cli | doctor、init、inspect、runtime prepare/check/run；JSON 输出和安全错误码 |
-| packages/core | 配置/证据/知识 Schema、显式根授权注册表、路径校验、限量扫描、上下文投影、能力缺口 |
-| packages/adapters | NodeAdapter、PythonAdapter、DotnetAdapter；共享扫描结果，产出统一组件和待验证命令 |
-| packages/dsh-bridge | 唯一 DSH 依赖层；版本检查、官方 Profile/patch 生成和启动 |
-| packages/diagnostics-mcp | 框架无关 MCP Server，官方 SDK stdio transport、输入/输出 Schema、安全错误 |
-| skills | onboarding、feature planning、observability design 及计划输出 Schema |
-| templates | 官方 Codex 可选 patch；三类知识记录示例 |
-| fixtures | ALS-like 与 Pollen-like 模拟清单/目录/日志，不含真实数据或硬件代码 |
-| evals | 离线单元、CLI、MCP 协议、DSH 真启动和 Codex payload 检查 |
+| `packages/core/src/v2` | 外部 Registry、Code/Rules、Plan/Task、Workspace、Execution、Evidence、Diagnostics；严格 Schema、过滤、门禁与预算 |
+| `packages/adapters` | 原有 Python/Node/.NET 检测；engineeringSystem 组合服务 |
+| `packages/diagnostics-mcp` | 标准 SDK stdio；项目/Task 授权、限量工具、结构化输出和回执；main 按选项注入 Codex delegate 接口 |
+| `packages/dsh-bridge` | 官方 DSH Profile/JSON 事件、官方 Codex provider 容器；无自制 LLM 客户端、上下文压缩或 Agent Loop |
+| `apps/cli` | 人工批准、工作流与验收入口；legacy.ts 保留旧命令 |
+| `skills` | 接入、结构化规划、观测设计、持久化能力缺口 |
+| `evals/functional-mvp` | 独立 grader、真实容器/MCP 测试、分层离线/在线/真实项目报告 |
 
-core 和 adapters 不依赖 Cordis/DSH。MCP 不依赖 DSH；它只调用 core。
-`RuntimeAdapter.prepare()` 是当前唯一必要的可替换运行时契约，不预先扩张会话或模型抽象。
-换 Harness 时可以继续使用相同 MCP Server、核心和 Skills，并提供新的启动适配器。
-现阶段 Registry 只接受当前进程启动时的显式授权；持久项目列表和远程调度均不实现。
+链路：CLI/MCP/Skills → Framework-independent Core → 注入 AgentDriver → 官方 DSH runtime。Core 管理状态门禁，模型内部行动循环仍由 DSH/Codex 实现。
 
-## 数据流
+状态默认 `.devagent-state`：projects、workspaces、tasks、approvals、plans、gaps、evidence、diagnostics、artifacts、reports、runtime。源目录与状态目录不能互相包含。日志/证据达到限额拒绝新增，要求人工归档，不自动删除审计历史。
 
-init 将用户路径规范化，排除链接和敏感目录，最多扫描深度 4、1500 个目录条目、100 个清单，
-每次清单读取最多 128 KiB。识别器只提取语言、受支持框架、构建/测试依赖存在性和脚本名称。
-它不执行 manifest 脚本，原始脚本值不会复制到配置或 MCP。
-发现的命令只保存固定可执行文件和参数模板，均为 pending。
-最终通过严格 Schema 检查后，以排他创建方式写 `.devagent/project.yaml`。
+TypeScript 使用官方编译器 AST 提取声明与 import；Python/C# 使用词法静态提取，不是语义解析或动态调用图。架构层来自有路径证据的候选模块。Graphify 没有当前安全执行器中的授权 runner，明确降级受限源码查询；不会在原目录运行或更新索引，也不会发送整个图缓存。
 
-inspect/MCP 每次重新验证配置，无共享可变项目上下文缓存。Registry 将规范根目录映射为
-本机稳定 ID；工具只接受该 ID。读取路径检查词法包含关系、每段链接、realpath 和大小限制。
-输出经过明确字段投影，不输出原始 manifest、环境或命令参数。所有正常响应包含来源和诊断状态。
+项目读取授权、远端分享和命令批准独立。真实源 local-only，本轮仅 fixture 在线。快照来自明确 Commit，建立独立 Git baseline；工作区版本是允许源码内容摘要。完成任务需计划及所有批准命令在最终版本的签名成功证据。
 
-doctor 只运行固定的 `--version` 检查，从输出提取版本号，不打印原始 stdout/stderr 或环境值。
-Windows `.cmd` 通过固定命令参数和正确的原样命令行引用启动；不接收用户提供的 shell 文本。
-
-## DSH 扩展
-
-Profile 使用官方 base/headless bundle，patch 从锁定版本的 base 条目生成，关闭模型可调用的
-通用执行/读写/网络/子 Agent 工具，仅保留 Skills loader 和项目 MCP。
-Skills filesystem 配置 `includeDefaultRoots: false` 与绝对 `customSkillDirs`。
-MCP 条目使用官方 `serverName/transport/command/args/cwd/env` 配置；进程由官方客户端管理。
-默认遥测关闭，不修改 `~/.dsh`。DSH 自身仍在本地运行并持有其正常服务，
-工具限制不是操作系统隔离；应在受控账户/环境运行不受信任任务。
-
-测试中的 DSH probe 禁用 headless runner，启动真实官方 Profile 和服务，通过
-`ctx.tools.execute()` 调用已注册的 MCP 工具，然后通过官方 shutdown 生命周期退出。
-该 probe 不配置测试模型、不发 LLM 请求，也不属于产品 Agent Loop。
-
-当前边界和决定见 [decisions/001-runtime-and-boundaries.md](decisions/001-runtime-and-boundaries.md)。
+最多 3 次实际命令、60 次变更操作、200 次单任务 MCP 回执；文件锁串行化计数，执行并发 1。进程崩溃后的遗留锁需人工确认。兼容旧 project.yaml、init/inspect/runtime 和双工具 MCP；V2 独立 schemaVersion 2。保留 V1 计划 Schema，新增 V2 submit_plan 契约。Core 新增 TypeScript 运行时依赖复用已固定版本，以调用官方解析器。

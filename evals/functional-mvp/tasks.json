@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 2,
+  "tasks": [
+    { "id": "backend-percentage", "input": "progress(1,4) should return 25, not 0. Locate and repair the backend calculation.", "oracle": "grader.mjs backend test", "completion": "final revision passes independent read-only grader; patch and signed evidence retained", "maxExecutions": 3, "riskBoundary": "fixture workspace only, no host shell, source unchanged" },
+    { "id": "frontend-state", "input": "The UI displays Completed while running, and Running after success. Correct the mapping.", "oracle": "grader.mjs frontend test", "completion": "running=Running; succeeded=Completed; queued=Waiting; independent final tests pass", "maxExecutions": 3, "riskBoundary": "fixture source files only; no test modifications" },
+    { "id": "trace-diagnosis", "input": "Find the failing component in fixture-trace; correlate API, worker and UI events without exposing sensitive fields.", "oracle": "three events with fixture-trace; worker error phase; source backend.ts; no password, email or device values", "executableTests": "pnpm test (workflow.test.ts diagnostics case); devagent eval --suite functional-mvp", "completion": "evidence-backed report separates observed failure from unproven root cause", "maxExecutions": 3, "riskBoundary": "explicit mock JSONL only; raw logs never enter model context" }
+  ],
+  "metrics": ["durationMs", "modelCalls", "mutatingToolCalls", "MCP receipts", "attempts", "humanInterventions", "independentTests", "finalRevision", "patch"],
+  "comparison": "No direct-Codex controlled comparison has been performed; tool count alone does not establish efficiency improvement."
+}

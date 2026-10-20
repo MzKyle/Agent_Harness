@@ -1,24 +1,27 @@
 ---
 name: project-onboarding
-description: Identify a repository's supported stacks, create its DevAgent configuration, and report engineering capability gaps when onboarding a project.
+description: Connect an explicitly authorized repository through the read-only external registry, inspect source and project rules, and report engineering capability gaps.
 ---
 
 Use the user's authorized project path. The harness location is the parent of this
 skill root's parent; the built CLI is `apps/cli/dist/main.js` there.
 
-1. Run `node <harness>/apps/cli/dist/main.js init --path <project> --dry-run`
-   through an available authorized command tool. Inspect detection warnings and
-   manifest sources. Detection reads bounded metadata, never executes project scripts.
-2. Create configuration with the same command without `--dry-run` when project
-   configuration writes are in scope. Existing configuration must be preserved;
-   use `inspect` instead of deleting it or forcing reinitialization.
-3. Run `inspect --path <project>` to obtain its stable project ID. When connected,
-   call `mcp__devagent__get_project_context` and
-   `mcp__devagent__get_project_capabilities` with that ID.
+1. Use `node <harness>/apps/cli/dist/main.js project add --path <absolute> --read-only`
+   for external projects. Add `--rules` only when reading engineering rules is
+   authorized. Registration lives in the Harness state directory, never the source.
+   Use `--fixture --share-fixture` only for dedicated mock projects explicitly
+   authorized for remote model sharing; real source remains local-only.
+2. Run `project inspect --id <project-id>` and `project rules --id <project-id>`.
+   Do not use legacy `init` on a read-only business repository. It writes a config.
+3. When connected,
+   call `mcp__devagent__get_project_context`, `get_project_capabilities`,
+   `get_project_rules` and bounded source tools with that ID.
 4. Report identified components, source manifests, unrecognized portions, and gaps
    grouped by test execution, UI testing, observability, and device adaptation.
    Label declared commands `pending`; promote only with revision-bound execution
-   evidence. The M1 CLI deliberately has no automatic promotion command.
+   evidence. `workspace create --project <id> --revision <commit>` creates a
+   filtered independent snapshot; dirty source changes are excluded. Tests require
+   separate human command approval and a successful isolation probe.
 
 If no command tool is mounted, return the concrete CLI invocation for the human
 and use MCP for already initialized projects. Do not invent an execution result.

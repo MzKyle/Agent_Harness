@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { getProjectCapabilities, getProjectContext, ProjectError, ProjectRegistry } from '@devagent/core';
+export { createFunctionalServer } from './functional.js';
 
 export const inputSchema = z.object({ projectId: z.string().regex(/^project-[a-f0-9]{16}$/) }).strict();
 const source = z.object({ path: z.string(), kind: z.literal('configuration'), schemaVersion: z.literal(1) }).strict();

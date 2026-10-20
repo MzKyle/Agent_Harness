@@ -1,50 +1,13 @@
 #!/usr/bin/env node
-import { parseArgs } from 'node:util';
-import path from 'node:path';
-import { EngineeringDetector } from '@devagent/adapters';
-import { canonicalRoot, getProjectContext, initializeProject, ProjectError, ProjectRegistry, publicConfig } from '@devagent/core';
-import { DshRuntimeAdapter, harnessRoot, launchDsh } from '@devagent/dsh-bridge';
-import { doctor } from './doctor.js';
-
-const help = `DevAgent-Harness M0 + M1
-  devagent doctor
-  devagent init --path <project> [--dry-run]
-  devagent inspect --path <project>
-  devagent runtime prepare --path <project> [--output <new-runtime-directory>]
-  devagent runtime check --path <project> --output <runtime-directory>
-  devagent runtime run --path <project> --output <runtime-directory> --task <task>
-All output is JSON except this help and DSH runtime output. No discovered command is executed.
-Runtime run sends your task and approved metadata to the configured provider. Codex is opt-in via template.
-`;
-try {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    path: { type: 'string' }, 'dry-run': { type: 'boolean' }, output: { type: 'string' },
-    task: { type: 'string' }, help: { type: 'boolean', short: 'h' },
-  } });
-  const [command, operation] = positionals;
-  const print = (value: unknown) => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
-  if (values.help || !command) process.stdout.write(help);
-  else if (command === 'doctor' && positionals.length === 1) print(await doctor());
-  else if (['init', 'inspect', 'runtime'].includes(command)) {
-    if (!values.path || (command !== 'init' && values['dry-run'])) throw new ProjectError('INVALID_ARGUMENT');
-    const root = await canonicalRoot(path.resolve(values.path));
-    if (command === 'init' && positionals.length === 1) {
-      const result = await initializeProject(root, new EngineeringDetector(), values['dry-run']);
-      print({ ...result, config: publicConfig(result.config) });
-    } else if (command === 'inspect' && positionals.length === 1) {
-      const registry = await ProjectRegistry.create([root]);
-      print(await getProjectContext(registry, registry.list()[0]!.projectId));
-    } else if (command === 'runtime' && positionals.length === 2) {
-      const output = path.resolve(values.output ?? path.join(harnessRoot, '.dsh-local', 'runtime'));
-      if (operation === 'prepare') print(await new DshRuntimeAdapter().prepare({ projectRoot: root, outputDirectory: output }));
-      else if (operation === 'check' || operation === 'run') {
-        if (operation === 'run' && !values.task) throw new ProjectError('INVALID_ARGUMENT');
-        const result = launchDsh(output, root, operation === 'check' ? ['--dump-config'] : [values.task!]);
-        process.exitCode = result.status ?? 1;
-      } else throw new ProjectError('INVALID_ARGUMENT');
-    } else throw new ProjectError('INVALID_ARGUMENT');
-  } else throw new ProjectError('INVALID_ARGUMENT');
-} catch (error) {
-  process.stderr.write(`${JSON.stringify({ status: 'error', code: error instanceof ProjectError ? error.code : 'COMMAND_FAILED' })}\n`);
-  process.exitCode = 1;
-}
+import { HarnessError } from '@devagent/core';
+import { functionalMain } from './functional.js';
+const functional = new Set(['project', 'code', 'workspace', 'isolation', 'command', 'evidence', 'diagnostics', 'task', 'eval', 'doctor', 'codex']);
+if (!process.argv[2] || ['--help', '-h'].includes(process.argv[2])) {
+  process.stdout.write('DevAgent-Harness V0.2\n doctor\n project add --path <absolute> --read-only [--rules]\n project list|inspect|rules|fingerprint|plan|remove --id <project-id>\n code search|read|symbol|dependencies --project <id>\n workspace create --project <id>\n workspace inspect|diff|cleanup --id <workspace-id>\n isolation configure --image <local-image>\n command approve --workspace <id> --id test --executable node --args-file <json-file>\n command run --workspace <id> --id test\n task run --project <id> --mode isolated --prompt <task> [--workspace <id>] [--codex]\n task status|report --id <task-id>\n evidence list|get|export\n diagnostics import|query|failures|diagnose\n codex configure|status|login\n eval --suite functional-mvp\n Legacy: init --path <project> [--dry-run]; inspect; runtime prepare|check|run\n');
+} else if (functional.has(process.argv[2] ?? '')) {
+  try { await functionalMain(process.argv.slice(2)); }
+  catch (error) {
+    process.stderr.write(JSON.stringify({ status: 'error', code: error instanceof HarnessError ? error.code : 'COMMAND_FAILED', remedy: error instanceof HarnessError ? error.remedy : '' })+'\n');
+    process.exitCode = 1;
+  }
+} else await import('./legacy.js');

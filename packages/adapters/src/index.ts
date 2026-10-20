@@ -5,6 +5,7 @@ import { canonicalRoot, checkedPath, inventory, readBounded, projectSchema,
   type ProjectConfig, type Component, type Command, type Inventory, type ProjectDetector } from '@devagent/core';
 
 type Manifest = Record<string, unknown>;
+export { engineeringSystem, type EngineeringSystem } from './system.js';
 function record(value: unknown): Manifest {
   return typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Manifest : {};
 }

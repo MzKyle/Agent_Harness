@@ -1,0 +1,65 @@
+import { afterEach, expect, it } from 'vitest';
+import { writeFile, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import { configureIsolation, fingerprint, newId, docker, staticPlan, type AgentDriver } from '../../packages/core/src/index.js';
+import { functionalFixture, independentGrader, patchFixture } from './helpers.js';
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { await Promise.all(cleanups.splice(0).map((run) => run())); });
+it('executes a genuine failing test, verifies a changed snapshot, preserves signed revision evidence and original source', async () => {
+  const item = await functionalFixture(); cleanups.push(item.cleanup);
+  const capability = await configureIsolation(item.system.store, 'node:24-bookworm-slim'); expect(capability.verified).toBe(true);
+  const sourceBefore = await fingerprint(item.source); const workspace = await item.system.workspaces.create(item.project.id); await independentGrader(item.system, workspace.id);
+  const taskId = newId('task');
+  const failed = await item.system.execution.run(workspace.id, 'acceptance', taskId); expect(failed.status).toBe('failed'); expect(failed.exitCode).not.toBe(0);
+  await patchFixture(item.system, workspace.id);
+  const passed = await item.system.execution.run(workspace.id, 'acceptance', taskId); expect(passed.status).toBe('passed'); expect(passed.exitCode).toBe(0);
+  expect(await item.system.execution.evidence.isVerified(passed.id, passed.workspaceRevision)).toBe(true);
+  expect(await item.system.execution.evidence.isVerified(passed.id, failed.workspaceRevision)).toBe(false);
+  const diff = await item.system.workspaces.diff(workspace.id); expect(diff.changedFiles.sort()).toEqual(['src/backend.ts', 'src/status.ts']);
+  expect((await item.system.execution.evidence.report(taskId)).results).toHaveLength(2); expect(await fingerprint(item.source)).toEqual(sourceBefore);
+  const output = await item.system.store.text(passed.stdoutArtifact); await item.system.store.put(passed.stdoutArtifact, 'tampered');
+  await expect(item.system.execution.evidence.get(passed.id)).rejects.toThrow('EVIDENCE_ARTIFACT_INTEGRITY_FAILED');
+  await item.system.store.put(passed.stdoutArtifact, output);
+  const stored = await item.system.store.get<Record<string, unknown>>(`evidence/${passed.id}.json`); stored.exitCode = 99; await item.system.store.put(`evidence/${passed.id}.json`, stored);
+  await expect(item.system.execution.evidence.get(passed.id)).rejects.toThrow('EVIDENCE_INTEGRITY_FAILED');
+});
+it('rejects partial final verification and accepts all required commands at the final revision through TaskService', async () => {
+  const item = await functionalFixture(); cleanups.push(item.cleanup); await configureIsolation(item.system.store, 'node:24-bookworm-slim');
+  const workspace = await item.system.workspaces.create(item.project.id); await independentGrader(item.system, workspace.id); await patchFixture(item.system, workspace.id);
+  await item.system.store.put(`graders/${workspace.id}/other.test.mjs`, "import{test}from'node:test';import assert from'node:assert/strict';import{progress}from'/workspace/src/backend.ts';test('additional required check',()=>assert.equal(progress(2,5),40));");
+  await item.system.execution.approve(workspace.id, { id: 'required-second', executable: 'node', args: ['--test', '/grader/other.test.mjs'] });
+  const plan = await staticPlan(item.system.tasks, item.system.code, item.project.id, 'Validate both independent commands', ['progress']);
+  const driver = (both: boolean): AgentDriver => ({ run: async (task) => {
+    await item.system.tasks.submitPlan(task.id, plan.plan); await item.system.tasks.runApproved(task.id, 'acceptance');
+    if (both) await item.system.tasks.runApproved(task.id, 'required-second');
+    return { status: 'completed', reason: null, model: null, modelCalls: 0 };
+  } });
+  const partial = await item.system.tasks.run(item.project.id, 'Verify required commands', 'isolated', driver(false), { workspaceId: workspace.id });
+  expect(partial.state).toBe('failed'); expect(partial.reason).toBe('MISSING_FINAL_VERIFICATION');
+  const full = await item.system.tasks.run(item.project.id, 'Verify all required commands', 'isolated', driver(true), { workspaceId: workspace.id });
+  expect(full.state).toBe('succeeded'); expect(full.evidenceIds).toHaveLength(2);
+});
+it('contains hostile scripts: no host files, no network, readonly Git metadata, output bounds, timeout and process-tree cleanup', async () => {
+  const item = await functionalFixture(); cleanups.push(item.cleanup); expect((await configureIsolation(item.system.store, 'node:24-bookworm-slim')).verified).toBe(true);
+  const workspace = await item.system.workspaces.create(item.project.id); const root = await item.system.workspaces.root(workspace.id);
+  await writeFile(path.join(item.parent, 'outside-private.txt'), 'host canary');
+  await item.system.workspaces.write(workspace.id, 'tests/security.test.mjs', `import{test}from'node:test';import assert from'node:assert/strict';import fs from'node:fs';test('host and git denied',()=>{assert.throws(()=>fs.readFileSync(${JSON.stringify(path.join(item.parent, 'outside-private.txt'))}));assert.throws(()=>fs.writeFileSync('/workspace/.git/config','bad'));assert.ok(fs.readFileSync('/proc/net/route','utf8').trim().split('\\n').length===1);assert.ok(!fs.existsSync('/var/run/docker.sock'));console.log('x'.repeat(90000));});`);
+  await item.system.execution.approve(workspace.id, { id: 'security', executable: 'node', args: ['--test', 'tests/security.test.mjs'] });
+  const checked = await item.system.execution.run(workspace.id, 'security', newId('task')); expect(checked.status).toBe('passed'); expect(checked.truncated).toBe(true);
+  expect((await readFile(path.join(root, '.git/config'), 'utf8'))).not.toBe('bad');
+  await item.system.workspaces.write(workspace.id, 'tests/timeout.test.mjs', `import{spawn}from'node:child_process';spawn(process.execPath,['-e','setInterval(()=>{},1000)']);setInterval(()=>{},1000);`);
+  await item.system.execution.approve(workspace.id, { id: 'timeout', executable: 'node', args: ['--test', 'tests/timeout.test.mjs'], timeoutMs: 700 });
+  const timed = await item.system.execution.run(workspace.id, 'timeout', newId('task')); expect(timed.status).toBe('timeout');
+  expect(docker(['ps', '--filter', `name=devagent-${timed.id.slice(10)}`, '--format', '{{.ID}}'])).toBe('');
+});
+it('cancels execution without retaining a running process tree and invalidates changed command declarations', async () => {
+  const item = await functionalFixture(); cleanups.push(item.cleanup); await configureIsolation(item.system.store, 'node:24-bookworm-slim');
+  const workspace = await item.system.workspaces.create(item.project.id);
+  await item.system.workspaces.write(workspace.id, 'tests/cancel.test.mjs', "import{spawn}from'node:child_process';spawn(process.execPath,['-e','setInterval(()=>{},1000)']);setInterval(()=>{},1000);");
+  await item.system.execution.approve(workspace.id, { id: 'cancel', executable: 'node', args: ['--test', 'tests/cancel.test.mjs'] });
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 4500);
+  const cancelled = await item.system.execution.run(workspace.id, 'cancel', newId('task'), controller.signal); clearTimeout(timer);
+  expect(cancelled.status).toBe('cancelled'); expect(docker(['ps', '--filter', `name=devagent-${cancelled.id.slice(10)}`, '--format', '{{.ID}}'])).toBe('');
+  await writeFile(path.join(await item.system.workspaces.root(workspace.id), 'package.json'), '{"scripts":{"test":"changed"}}');
+  const stale = await item.system.execution.run(workspace.id, 'cancel', newId('task')); expect(stale.status).toBe('blocked'); expect(stale.reason).toBe('COMMAND_APPROVAL_STALE');
+});

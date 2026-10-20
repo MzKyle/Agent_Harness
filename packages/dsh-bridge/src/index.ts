@@ -8,6 +8,8 @@ import { parse, stringify } from 'yaml';
 import { canonicalRoot, loadProject, ProjectError, type RuntimeAdapter } from '@devagent/core';
 
 export const DSH_VERSION = '0.2.1-rc.2';
+export { FunctionalDshDriver } from './functional.js';
+export { IsolatedCodex } from './codex-container.js';
 export const harnessRoot = fileURLToPath(new URL('../../../', import.meta.url));
 export const dshBin = fileURLToPath(new URL('../node_modules/@deepseek-ai/dsh/lib/bin.js', import.meta.url));
 const requireDsh = createRequire(realpathSync(dshBin));

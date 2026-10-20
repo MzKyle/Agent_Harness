@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevAgent V0.2 submit_plan payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["requirement", "facts", "assumptions", "affectedModules", "steps", "acceptance", "observability"],
+  "properties": {
+    "requirement": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "facts": { "type": "array", "minItems": 1, "maxItems": 40, "items": { "type": "object", "additionalProperties": false, "required": ["source", "finding"], "properties": { "source": { "type": "string" }, "finding": { "type": "string" } } } },
+    "assumptions": { "type": "array", "maxItems": 20, "items": { "type": "string" } },
+    "affectedModules": { "type": "array", "minItems": 1, "maxItems": 40, "items": { "type": "string", "description": "Managed relative module path; no parent traversal" } },
+    "steps": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "object", "additionalProperties": false, "required": ["change", "verification"], "properties": { "change": { "type": "string" }, "verification": { "type": "string" } } } },
+    "acceptance": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string" } },
+    "observability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["states", "logs", "correlationIds", "errorCodes", "recovery", "testEntry", "regressionRisks", "diagnosticTools", "sensitiveData", "overhead"],
+      "properties": {
+        "states": { "type": "array", "items": { "type": "string" } },
+        "logs": { "type": "array", "items": { "type": "string" } },
+        "correlationIds": { "type": "array", "items": { "type": "string" } },
+        "errorCodes": { "type": "array", "items": { "type": "string" } },
+        "recovery": { "type": "string" }, "testEntry": { "type": "string" },
+        "regressionRisks": { "type": "array", "items": { "type": "string" } },
+        "diagnosticTools": { "type": "array", "items": { "type": "string" } },
+        "sensitiveData": { "type": "string" }, "overhead": { "type": "string" }
+      }
+    }
+  }
+}

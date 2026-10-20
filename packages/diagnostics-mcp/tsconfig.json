@@ -7,6 +7,7 @@
                     "src/**/*.ts"
                 ],
     "references":  [
+                       { "path": "../dsh-bridge" },
                        {
                            "path":  "../core"
                        },
