@@ -88,7 +88,10 @@ export async function functionalMain(argv: string[]) {
         if (!/\.(?:jsonl|txt|log)$/i.test(file) || (await lstat(file)).isSymbolicLink() || (await lstat(file)).size > 1024 * 1024) throw new HarnessError('DIAGNOSTIC_FILE_DENIED');
         result = await system.diagnostics.import(await readFile(file, 'utf8'), path.basename(file), { ...(v.project ? { projectId: v.project } : {}), ...(v.task ? { taskId: v.task } : {}) });
       } else if (operation === 'query') result = await system.diagnostics.query({ ...(v.id ? { diagnosticId: v.id } : {}), ...(v.trace ? { traceId: v.trace } : {}), ...(v.severity ? { severity: v.severity } : {}), ...(v.from ? { from: v.from } : {}), ...(v.to ? { to: v.to } : {}), ...(v['operation-id'] ? { operationId: v['operation-id'] } : {}) });
-      else if (operation === 'failures') result = await system.diagnostics.failures(task());
+        else if (operation === 'runtime') result = await system.runtime.query(project(), v.id);
+        else if (operation === 'capture-runtime') result = await system.runtime.capture(required(v.id, 'id'));
+        else if (operation === 'validate') result = await system.validator.validate(task());
+        else if (operation === 'failures') result = await system.diagnostics.failures(task());
       else if (operation === 'diagnose') result = await system.diagnostics.diagnose(project(), task());
       else throw new HarnessError('UNKNOWN_DIAGNOSTIC_OPERATION');
     } else if (command === 'task') {

@@ -1,6 +1,6 @@
 # DevAgent-Harness
 
-Scope: V0.3 Personal Engineering Intelligence and Project Onboarding. Preserve V0.2 compatibility.
+Scope: V0.4 Codex Native Engineering Workflow and Runtime Diagnostics. Preserve V0.2/V0.3 compatibility.
 Keep framework-independent engineering logic in core/adapters;
 all DSH-specific imports and configuration belong in dsh-bridge.
 
@@ -24,6 +24,15 @@ all DSH-specific imports and configuration belong in dsh-bridge.
 - Onboarding source writes require a separate expiring, diff/file/revision/branch-bound approval.
 - This round only exercises source writes on managed fixtures; ALS/Pollen remain read-only.
 - Preserve review provenance and history; inferred memories are candidates, never confirmed facts.
+- Explicit Work sessions capture lifecycle metadata only. Never scan private Codex history databases.
+- Hooks are observations, never an execution or verification boundary. Stop/checkpoint and explicit
+  finalize must work when hooks are absent. Record actual callback delivery separately from installation.
+- Runtime observations require signed isolated execution output; they are point-in-time diagnostic
+  assertions, not live production truth. Keep generic correlation separate from ALS semantic mapping.
+- Completion requires all approved commands to pass at the final workspace revision. Preserve source
+  integrity and independent graders. Natural-language architectural advice is not an executable proof.
+- Compare native/enhanced tasks with shared restricted I/O and independent oracles; retain failures
+  and protocol revisions. Do not claim efficiency from one pair or from tool discovery.
 - Use temporary fixture copies in tests; do not initialize real business projects implicitly.
 - Keep files below 1500 lines. Preserve existing user changes and configurations.
 - Before delivery run: pnpm typecheck; pnpm lint; pnpm test; pnpm build; pnpm test:integration.

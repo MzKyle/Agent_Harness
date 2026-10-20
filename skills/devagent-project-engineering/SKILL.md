@@ -23,8 +23,18 @@ proportionate observability requirements. Use only the bound workspace and appro
 commands through `run_approved_command`. Collect final-revision evidence; distinguish
 changed, tested, verified, failed, blocked and incomplete outcomes in delivery.
 
-Task history is recorded only for Harness tasks. Do not invent summaries for normal
-Codex sessions that were not imported. `propose_project_memory` and
+Use `get_work_sessions` / `get_work_status` for an explicitly managed continuation.
+Compare current source and workspace evidence before reusing historical results.
+The source commit, managed baseline Git commit and working content hash have
+different meanings; a different managed baseline is expected, not itself drift.
+For workflow failures, query `get_runtime_diagnostics`, `get_error_timeline`,
+`get_state_consistency` or `get_regression_context` as needed. Snapshots are
+point-in-time observations; static source candidates do not establish root cause.
+
+Use `record_work_progress` for decisions and pending checks. Resolve completed
+items by exact text with its `resolved` field after actual verification. Hooks
+are optional observations; the managed runner checkpoints and finalizes without
+them. Do not claim that ordinary unbound chats were recorded. `propose_project_memory` and
 `propose_profile_update` create candidates, not confirmed facts. A verified test does
 not automatically authorize a long-term inference or plugin installation.
 

@@ -6,8 +6,8 @@ export class NativeRpc {
   readonly child: ChildProcessWithoutNullStreams;
   private sequence = 0;
   private pending = new Map<number, { resolve: (value: unknown) => void; reject: (reason: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-  constructor(executable: string, cwd: string, environment: NodeJS.ProcessEnv) {
-    this.child = spawn(executable, ['app-server', '--stdio'], { cwd, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+  constructor(executable: string, cwd: string, environment: NodeJS.ProcessEnv, configArgs: string[] = []) {
+    this.child = spawn(executable, ['app-server', '--stdio', ...configArgs], { cwd, env: environment, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
     let buffer = '';
     this.child.stdout.on('data', (chunk: Buffer) => {
       buffer += chunk.toString();

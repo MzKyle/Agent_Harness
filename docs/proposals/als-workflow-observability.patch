@@ -1,0 +1,25 @@
+--- a/src/auto_label_studio/application/workflow_engine.py
++++ b/src/auto_label_studio/application/workflow_engine.py
+@@ -1,5 +1,6 @@
+ from __future__ import annotations
+ 
++import logging
+ from dataclasses import dataclass, field
+ from threading import Event, Thread
+ from typing import Any, Callable
+@@ -174,6 +175,7 @@ class WorkflowEngine:
+         if workflow is None:
+             return None
+         workflow_id = workflow["workflow_id"]
++        logging.getLogger(__name__).info("workflow_claimed", extra={"workflow_id": workflow_id, "component": "worker"})
+         outputs: dict[str, Any] = {}
+         try:
+             for step in workflow["steps"]:
+@@ -236,6 +238,7 @@ class WorkflowEngine:
+                 workflow_id, WorkflowStatus.CANCELLED.value, result={"steps": outputs}, error=str(exc)
+             )
+         except Exception as exc:
++            logging.getLogger(__name__).error("workflow_failed", extra={"workflow_id": workflow_id, "component": "worker", "error_type": type(exc).__name__})
+             with self.store.registry.connect() as connection:
+                 connection.execute(
+                     "UPDATE workflow_steps SET status='failed',error_text=?,updated_at=? "

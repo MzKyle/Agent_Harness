@@ -1,6 +1,13 @@
-# V0.3 当前架构
+# V0.4 当前架构
 
 Codex 是主要 Agent。Harness 负责有来源的上下文、项目接管和权限门禁，复用现有服务；不新增模型客户端、Agent Loop、编辑器或第二套项目注册/任务系统。
+
+V0.4 增量：core/v4 保存签名 Work/元数据事件、源码 Hash 检查点、运行观察和可执行 Validator。
+原有 portable schema 保持版本3；Task、Workspace、审批和 Evidence 沿用原系统。
+codex-integration 只启动官方运行时，消费 exec JSON 元数据、装配本地 Hooks 和签名 MCP 回执。
+runtime-diagnostics 通用关联与 adapters/als-runtime 语义映射分离；没有新数据库、服务或生产依赖。
+机器规则强制最终版本命令证据与源完整性，架构/覆盖/恢复建议明确保留 advice-only。
+详细边界见 [Work](codex-work-sessions.md)、[Hooks](codex-hooks-integration.md)、[ALS](als-diagnostics-adapter.md)。
 
 | 模块 | 当前职责 |
 | --- | --- |
@@ -41,6 +48,6 @@ Onboarding：analyze → plan → diff → 人工 approve → apply → verify/r
 
 ## 原生集成与兼容性
 
-官方 MCP/Skill 配置和原生加载器。薄 JSON-RPC 客户端只查官方 app-server 发现/认证元数据，不运行模型循环。独立 HOME，不导入宿主 auth。在线仅 fixture；MCP 再次检查项目/Task 分享权限。签名回执和答案核对真实 revision、实际返回路径、禁止操作、近期状态。目前发现路径已实测；认证后会话、自动 Skill 触发和自主修复尚未通过验收。
+官方 MCP/Skill 配置和原生加载器。薄 JSON-RPC 客户端只查官方 app-server 发现/认证/模型目录元数据，不运行模型循环。独立 HOME，不导入宿主 auth。在线仅 fixture；MCP 再次检查项目/Task 分享权限。签名回执和答案核对原项目 revision、实际返回路径、禁止操作、近期状态；原项目提交、Workspace 基线 Git 提交和内容 Hash 分开表达。真实模型上下文、自主修复和新会话复验已通过；Skill 自动触发与原生 Hooks 真回调仍未证明。
 
 旧接口/格式保持兼容；新增独立 V3 数据契约。Windows Forms 是框架枚举增量值。原生包复用已安装 MCP SDK，没有新增第三方生产依赖；新包用于隔离原生 Codex 与 DSH 的依赖边界。

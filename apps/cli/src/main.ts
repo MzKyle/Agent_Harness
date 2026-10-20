@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { HarnessError } from '@devagent/core';
 import { intelligenceCommand, intelligenceMain } from './intelligence.js';
+import { workMain } from './work.js';
 const functional = new Set(['project', 'code', 'workspace', 'isolation', 'command', 'evidence', 'diagnostics', 'task', 'eval', 'doctor', 'codex']);
 if (!process.argv[2] || ['--help', '-h'].includes(process.argv[2])) {
-  process.stdout.write(`DevAgent-Harness V0.3
+  process.stdout.write(`DevAgent-Harness V0.4
  profile show|set|propose|review|history|delete|import-template|export
  memory show|set|propose|search|review|history|delete|export
  project add --path <absolute> --read-only [--rules]
@@ -20,7 +21,11 @@ if (!process.argv[2] || ['--help', '-h'].includes(process.argv[2])) {
  capability approve|implemented|verify|adopt|invoke|deprecate --id <proposal-id>
  backup create|inspect|restore --passphrase-env DEVAGENT_BACKUP_PASSPHRASE
  codex attach --project <fixture-id> [--include-preferences]
- codex inspect|session|login-native --id <attachment-id>
+ codex inspect|session|login-native --id <attachment-id> [--method browser]
+ codex run --project <id> --goal <goal> [--coding] [--work <id>]
+ codex hooks --id <attachment-id> --work <id>
+ work start|list|status|checkpoint|finalize|resume|progress|events|export|delete
+ work start --project <id> --goal <goal> [--workspace <id>]
  code search|read|symbol|dependencies --project <id>
  workspace create --project <id>; workspace inspect|diff|cleanup --id <id>
  isolation configure --image <local-image>
@@ -28,15 +33,16 @@ if (!process.argv[2] || ['--help', '-h'].includes(process.argv[2])) {
  command run --workspace <id> --id test
  task run --project <id> --mode isolated --prompt <task> [--workspace <id>] [--codex]
  task status|report --id <task-id>; evidence list|get|export
- diagnostics import|query|failures|diagnose; doctor
+ diagnostics import|query|failures|diagnose|runtime|capture-runtime|validate; doctor
  eval --suite personal-engineering [--online] [--als-path <readonly>] [--pollen-path <readonly>]
  All operations: --home <absolute-state-root>. See README and docs/personal-engineering.md for exact inputs and approval boundaries.
  V0.2 optional DSH: codex configure|status|login; eval --suite functional-mvp
  Legacy: init --path <project> [--dry-run]; inspect; runtime prepare|check|run
 `);
-} else if (intelligenceCommand(process.argv.slice(2)) || functional.has(process.argv[2] ?? '')) {
+} else if (process.argv[2] === 'work' || intelligenceCommand(process.argv.slice(2)) || functional.has(process.argv[2] ?? '')) {
   try {
-    if (intelligenceCommand(process.argv.slice(2))) await intelligenceMain(process.argv.slice(2));
+    if (process.argv[2] === 'work') await workMain(process.argv.slice(2));
+    else if (intelligenceCommand(process.argv.slice(2))) await intelligenceMain(process.argv.slice(2));
     else await (await import('./functional.js')).functionalMain(process.argv.slice(2));
   }
   catch (error) {

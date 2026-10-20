@@ -1,4 +1,10 @@
-# V0.3 操作指南
+# V0.4 操作指南
+
+新增日常入口见 [显式 Work](codex-work-sessions.md)、[原生 Codex](codex-native.md)、
+[运行诊断](als-diagnostics-adapter.md)。下面原 V3 身份/Onboarding/记忆/迁移命令保持兼容。
+`codex run --project <id> --goal <goal>` 自动选择该项目最近 attachment；`work status --project`
+选择最近 Work，日常操作无需重复复制全部 ID。默认分析，`--coding` 才开放已绑定 Workspace 的受控编辑。
+首次授权、Workspace、命令审批仍需明确建立，不能由历史记忆恢复。
 
 所有 CLI 支持 --home 指向独立绝对状态目录。以下占位 ID 来自上一条 JSON 输出，不是可直接执行的字面值。可完整执行的 fixture 演示见最后一节。
 

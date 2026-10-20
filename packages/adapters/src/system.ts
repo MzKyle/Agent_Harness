@@ -1,5 +1,7 @@
 import { StateStore, ExternalRegistry, CodeIntelligence, WorkspaceManager, ExecutionEngine, Diagnostics, TaskService } from '@devagent/core';
 import { IntelligenceData, ProjectIdentities, EngineeringMemory, ProjectProfiles, ProjectCapabilities, TaskHistory, ContextBootstrap, CapabilityEvolution, ProjectOnboarding, PortableState } from '@devagent/core';
+import { WorkSessions, RuntimeDiagnostics, WorkflowValidator } from '@devagent/core';
+import { alsRuntimeAdapter } from './als-runtime.js';
 import { EngineeringDetector } from './index.js';
 export async function engineeringSystem(home: string) {
   const store = await StateStore.open(home);
@@ -20,12 +22,22 @@ export async function engineeringSystem(home: string) {
   const evolution = new CapabilityEvolution(intelligence, identities, tasks, workspaces, execution.evidence);
   const onboarding = new ProjectOnboarding(intelligence, identities, registry, profiles, capabilities, workspaces, tasks);
   const portability = new PortableState(intelligence);
+  const work = new WorkSessions(intelligence, identities, registry, tasks, workspaces, memory, history);
+  context.workContext = id => work.context(id);
+  const runtime = new RuntimeDiagnostics(intelligence, identities, execution.evidence, workspaces, [alsRuntimeAdapter]);
+  const validator = new WorkflowValidator(intelligence, tasks, registry, workspaces);
+  capabilities.runtimeStatus = async id => {
+    const observation = await runtime.query(id);
+    return observation.status === 'available' && !observation.stale
+      ? { status: 'verified', detail: `Actual isolated point-in-time diagnostic query; evidence=${observation.evidenceId}; no live production access` }
+      : { status: 'configured', detail: 'Explicit workflow snapshot adapter available; no current live service or database access verified' };
+  };
   registry.onRegistered = async record => {
     const identity = await identities.ensure(record);
     if (!(await intelligence.read()).profiles[identity.stableProjectId]) { await profiles.refresh(identity.stableProjectId); await capabilities.assess(identity.stableProjectId); }
   };
   tasks.onReported = task => history.record(task).then(() => undefined);
   tasks.onGap = (task, gapId, input) => evolution.capture(task, gapId, input).then(() => undefined);
-  return { store, registry, code, workspaces, execution, diagnostics, tasks, intelligence, identities, memory, profiles, capabilities, history, context, evolution, onboarding, portability };
+  return { store, registry, code, workspaces, execution, diagnostics, tasks, intelligence, identities, memory, profiles, capabilities, history, context, evolution, onboarding, portability, work, runtime, validator };
 }
 export type EngineeringSystem = Awaited<ReturnType<typeof engineeringSystem>>;

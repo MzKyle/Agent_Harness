@@ -1,8 +1,28 @@
-# Agent_Harness V0.3
+# Agent_Harness V0.4
 
 Codex 的本地个人工程上下文与能力管理系统：开发偏好、项目画像、近期工作、工程规范、能力契约，以及受控的诊断和验证。复用 V0.2 Registry / Task / Workspace / Evidence；DSH 是可选集成，不是画像、记忆和 Onboarding 的依赖。
 
-**当前：离线功能闭环通过，ALS/Pollen 只读接入通过；原生 Codex 已发现 MCP 和 Skill，模型实际调用仍为 blocked_by_auth。** 不把发现工具、生成 Skill 或确定性演示算作模型自主开发。
+**当前：独立 Codex 官方授权成功，真实模型 MCP/答案验收、模拟工程自主修复和新会话接续通过。**
+新增显式 Work、最小事件记录、ALS 工作流诊断映射、真实 HTTP/Worker/SQLite fixture 和最终版本 Validator。
+原生 Hooks 已配置但尚未观测到回调；受管事件降级路径已验证。ALS/Pollen 保持本地只读。
+小样本对照中增强版开销更高，暂不声称速度或 Token 收益。完整结果见 [验收](docs/verification.md)。
+
+## 受管 Codex 工程工作
+
+```powershell
+node apps/cli/dist/main.js codex attach --project <fixture-project>
+node apps/cli/dist/main.js codex login-native --id <attachment> --method browser
+node apps/cli/dist/main.js codex run --project <fixture-project> --goal '排查当前状态异常'
+node apps/cli/dist/main.js work status --project <fixture-project>
+node apps/cli/dist/main.js work resume --id <work>
+node apps/cli/dist/main.js codex run --project <fixture-project> --work <work> --coding --goal '继续修复并验证'
+```
+
+`--coding` 只编辑该 attachment 的过滤 Workspace，必须预先批准具体命令；没有审批或隔离器就拒绝执行。
+默认分析；fixture-only 在线许可和个人偏好分享各自独立。业务项目本轮仅本地分析，不可升级为在线分享。
+Hooks 不触发仍由 MCP 回执、官方 exec 事件、checkpoint 和 finalize 记录受管任务。
+普通未受管 IDE 聊天不会自动关联。详细操作见 [工作会话](docs/codex-work-sessions.md)、
+[原生接入](docs/codex-native.md)、[ALS 诊断](docs/als-diagnostics-adapter.md) 和 [对照评测](docs/engineering-evals.md)。
 
 ## 安装与验证
 

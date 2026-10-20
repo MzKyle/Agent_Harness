@@ -63,7 +63,7 @@ export class ProjectProfiles {
 }
 export class TaskHistory {
   constructor(readonly data: IntelligenceData, readonly identities: ProjectIdentities, readonly workspaces: WorkspaceManager, readonly evidence: EvidenceStore) {}
-  async record(task: Task) {
+  async record(task: Task, observation?: { modified: string[]; sourceRevision: string }) {
     const identity = await this.identities.resolve(task.projectId); const stable = identity.stableProjectId;
     const results = await this.evidence.list(task.id); let workspaceRevision: string | null = null; let sourceRevision: string | null = null; let modified: string[] = [];
     if (task.workspaceId) try {
@@ -72,8 +72,9 @@ export class TaskHistory {
     } catch { /* Failure to inspect cannot produce verified work. */ }
     const verified: string[] = [];
     if (workspaceRevision) for (const item of results) if (await this.evidence.isVerified(item.id, workspaceRevision)) verified.push(item.commandId);
+    if (observation && !task.workspaceId) { modified = observation.modified; sourceRevision = observation.sourceRevision; }
     const summary = taskSummarySchema.parse({ taskId: task.id, projectId: stable, requirement: task.prompt.slice(0, 2000), at: task.finishedAt ?? now(), state: task.state,
-      modified, tested: results.filter(item => item.exitCode !== null).map(item => item.commandId), verified,
+      modified: modified.slice(0, 100), tested: results.filter(item => item.exitCode !== null).map(item => item.commandId), verified,
       failed: results.filter(item => ['failed', 'timeout', 'cancelled', 'stale'].includes(item.status)).map(item => item.commandId),
       blocked: [...(task.state === 'blocked' && task.reason ? [task.reason] : []), ...results.filter(item => item.status === 'blocked').map(item => item.reason ?? 'blocked')],
       incomplete: task.state === 'succeeded' && verified.length ? [] : [task.reason ?? (task.mode === 'analysis' ? 'Analysis only; no implemented feature verified' : 'No final-revision verification')],

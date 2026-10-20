@@ -4,13 +4,13 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { engineeringSystem } from '@devagent/adapters';
 import { HarnessError, explicitRoot, readBounded, memoryInputSchema, type MemoryInput } from '@devagent/core';
-import { CodexNativeIntegration, probeHarnessMcp } from '@devagent/codex-integration';
+import { CodexNativeIntegration, probeHarnessMcp, runNativeWork, installWorkHooks } from '@devagent/codex-integration';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 export function intelligenceCommand(args: string[]) {
   return ['profile', 'memory', 'onboard', 'context', 'capability', 'backup'].includes(args[0] ?? '') ||
     args[0] === 'project' && ['identity', 'profile', 'refresh', 'relink'].includes(args[1] ?? '') ||
-    args[0] === 'codex' && ['attach', 'inspect', 'session', 'login-native'].includes(args[1] ?? '') ||
+    args[0] === 'codex' && ['attach', 'inspect', 'session', 'login-native', 'run', 'hooks'].includes(args[1] ?? '') ||
     args[0] === 'eval' && args.includes('personal-engineering');
 }
 async function readJson(input: string) {
@@ -26,7 +26,7 @@ export async function intelligenceMain(args: string[]) {
     workspace: { type: 'string' }, 'with-codex': { type: 'boolean' }, 'include-preferences': { type: 'boolean' }, 'commands-file': { type: 'string' },
     probe: { type: 'boolean' }, command: { type: 'string' }, evidence: { type: 'string' }, budget: { type: 'string' },
     'passphrase-env': { type: 'string' }, review: { type: 'string' }, suite: { type: 'string' }, image: { type: 'string' },
-    'als-path': { type: 'string' }, 'pollen-path': { type: 'string' }, online: { type: 'boolean' },
+    'als-path': { type: 'string' }, 'pollen-path': { type: 'string' }, online: { type: 'boolean' }, method: { type: 'string' }, goal: { type: 'string' }, coding: { type: 'boolean' }, work: { type: 'string' }, 'auth-from': { type: 'string' },
   } });
   const system = await engineeringSystem(path.resolve(v.home ?? path.join(root, '.devagent-state')));
   const native = new CodexNativeIntegration(system.store, system.registry, system.identities, system.workspaces, system.tasks);
@@ -99,10 +99,15 @@ export async function intelligenceMain(args: string[]) {
       else if (operation === 'restore') result = await system.portability.restore(path.resolve(required(v.file, 'file')), password(), required(v.review, 'review'));
       else throw new HarnessError('UNKNOWN_BACKUP_OPERATION');
     } else if (command === 'codex') {
-      if (operation === 'attach') result = await native.attach(project(), { ...(v.workspace ? { workspaceId: v.workspace } : {}), includePreferences: Boolean(v['include-preferences']) });
+      if (operation === 'attach') result = await native.attach(project(), { ...(v.workspace ? { workspaceId: v.workspace } : {}), ...(v['auth-from'] ? { authFrom: v['auth-from'] } : {}), includePreferences: Boolean(v['include-preferences']) });
       else if (operation === 'inspect') result = await native.inspect(id());
       else if (operation === 'session') result = await native.session(id());
-      else if (operation === 'login-native') result = await native.login(id());
+      else if (operation === 'run') result = await runNativeWork(native, system.work, v.id ?? (await native.latest(project())).id, required(v.goal, 'goal'), { coding: Boolean(v.coding), ...(v.work ? { workId: v.work } : {}) });
+      else if (operation === 'hooks') result = await installWorkHooks(native, system.work, id(), required(v.work, 'work'));
+      else if (operation === 'login-native') {
+        if (v.method && !['device', 'browser'].includes(v.method)) throw new HarnessError('CODEX_LOGIN_METHOD_DENIED');
+        result = await native.login(id(), v.method === 'browser' ? 'browser' : 'device');
+      }
       else throw new HarnessError('UNKNOWN_NATIVE_CODEX_OPERATION');
     } else if (command === 'eval') {
       const child = spawnSync(process.execPath, [path.join(root, 'evals/personal-engineering/run.mjs'), ...(v.home ? ['--home', system.store.root] : []),

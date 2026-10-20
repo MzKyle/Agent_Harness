@@ -28,3 +28,8 @@ export * from './v3/onboarding-contracts.js';
 export * from './v3/provisioning.js';
 export * from './v3/onboarding.js';
 export * from './v3/portability.js';
+export * from './v4/work-contracts.js';
+export * from './v4/work-capture.js';
+export * from './v4/runtime-diagnostics.js';
+export * from './v4/workflow-validator.js';
+export * from './v4/work-sessions.js';

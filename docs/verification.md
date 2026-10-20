@@ -1,73 +1,107 @@
-# V0.3 实施与分层验收
+﻿# V0.4 实施与分层验收
 
-日期：2026-10-20。项目 E:\Agent_Harness；分支 dev/personal-engineering-v0.3，基于 V0.2 main 448cf01d4db8cdd96aa8fc1671b7f02cb7ae31d4。开发前 main 与 origin/main 一致（0/0），新分支隔离。功能验收阶段未提交或推送；随后用户明确授权将当前代码提交并推送到远程 main，在线验收结论保持不变。
+日期：2026-10-20。项目 E:\Agent_Harness；分支 dev/codex-workflow-v0.4，基于
+V0.3 main 068e3a64bd36bb268f1c4d3615ab9ce15bbf3766。开始时 main/origin main 一致，工作区干净；
+本轮未提交、push 或 merge。V0.3 原报告保留于 [历史](history/v0.3-verification.md)。
 
-结论：**V0.3 离线功能闭环通过，真实项目只读接入通过；Codex 原生发现通过，真实模型调用 blocked_by_auth。** 不把 SDK 探针、Skill 文件或确定性演示描述为模型自主工程验收。
+结论：**受管 Codex + Harness 工程闭环通过；原生 Hooks 真回调仍未观测到。**
+真实模型已查询 MCP、使用返回数据、修改 fixture、通过独立 grader，并在新会话读取 Work 后复验。
+不能推广为普通未绑定 IDE 会话自动采集，也不声称真实 ALS 运行验证或效率显著提升。
 
-## 分层实际结果
+## 11 层实际结果
 
-| 层级 | 结果 | 实际证明与边界 |
+| 层级 | 结果 | 证据与边界 |
 | --- | --- | --- |
-| Unit Tests | passed，42/42，7文件 | V0.2 兼容；画像来源/审查/版本/删除；作用域/预算/时效；身份/备份冲突/认证/篡改/恶意schema/关联；审批/换行/注入/链接/主分支/过期；外部答案oracle |
-| Integration Tests | passed，19/19，7文件 | 真正 stdio MCP、真实 CLI、官方原生发现、Docker失败/通过/篡改/超时/取消；Onboarding/任务摘要；演进与恢复；V0.2 DSH runtime装配保留（无模型请求） |
-| Onboarding E2E | passed | 从零建立实际画像/能力；4份候选 Diff → 独立审批模拟 → Workspace应用 → Schema/Skill/TOML检查 → 实际MCP调用 → 已批准Docker回归通过 |
-| Existing Norms E2E | passed | 原AGENTS前缀保留，复用已有Skill/原生配置；fixture/dev项目写入与重复计划幂等；不覆盖人工修改 |
-| Memory E2E | passed | 真实修改/失败/最终通过与Task/Evidence关联；候选审查、近期摘要、预算上下文和3组件trace查询；外部普通Codex历史不自动采集 |
-| Portability E2E | passed | 独立state-a/state-b，加密备份、冲突预览、原子恢复、移动clone显式relink、refresh；ID稳定，auth/路径/审批/证据权威不恢复 |
-| Codex Native Integration | discovery passed；模型 blocked_by_auth | fresh官方app-server 0.157.1发现工程Skill与14项读取工具；独立HOME无认证；模型调用0；自动Skill使用未证明 |
-| Capability Evolution E2E | passed，确定性方法 | 去重gap → 审批模拟 → 独立RO grader真实失败 → 实现bounded trace模块 → Docker独立用例通过 → 审查采纳模拟 → 新Task实际调用；两Task全部批准命令均有最终版本证据 |
-| Real Project Read-Only Validation | passed，ALS/Pollen | 实际画像/能力/规范计划，识别Electron/React/Python与Windows Forms；前后HEAD/status/source/tree/Git摘要相同；未执行/写入/分享真实工程 |
-| Security Regression | passed，限本机测试覆盖 | 无审批/过期/主分支/并发内容变更/链接/穿越/跨项目访问拒绝；状态和Evidence/输出篡改拒绝；恢复不复制auth/权限；原生发现不等于认证后权限验收 |
+| Unit | passed，48/48，8文件 | 兼容 V2/V3；Work 隐私、伪造/replay/中断、漂移、归档、删除、无测试不验证、源完整性、Hook 配置冲突 |
+| MCP protocol | passed；integration 总计21/21，9文件 | 真 stdio；Task/项目 scope；Work/诊断目录、敏感进展与跨项目拒绝；容器执行、安全和旧集成 |
+| Native discovery | passed | 官方 app-server 0.157.1 实际发现 Skill/MCP/认证；发现不算模型使用 |
+| Online MCP | passed | 已认证官方 exec；签名 context/recent/source 回执；独立核对项目、原提交、路径、约束和近期状态 |
+| Autonomous coding | passed | 初始独立 grader 真失败；模型通过 MCP 修改 service.ts 与测试；最终两条命令均通过，原始 fixture 指纹一致 |
+| Work memory | passed（受管入口） | 新 Task/会话读取既有 Work，无新代码修改，重新提交 Plan 和两条复验；明确清除 pending。原生 Hooks 子项 blocked/unobserved |
+| Runtime diagnostics | passed（fixture） | 真实 HTTP/worker/SQLite；初始两项持久状态不同步，修复后一致；注入的异常/超时错误事件仍是预期输入 |
+| Capability evolution | passed | 实际运行观察驱动 gap 去重、实现、独立失败/通过、审查采纳模拟；下一 Task 真正容器调用新增命令 |
+| Real read-only | passed | ALS/Pollen 真实画像/规则候选/上下文；前后完整性指纹相同；业务命令0、源分享0、写入0 |
+| Security | passed（测试覆盖范围） | 伪造lease/Task/签名、跨项目、敏感事件、过期证据、审批/隔离、迁移剥权；不是绝对安全证明 |
+| Comparison | passed（协议修订后4类各一对） | 相同模型/配置/输入/commit/grader/受控I/O；两侧都通过。保留第一版历史接续两侧失败，不隐藏协议缺陷 |
 
-## 实际执行命令
+新增内容不包含新 Web UI、模型客户端、Agent Loop、注册系统或持久数据库。
+Work、运行观察、Validator 在现有 StateStore/签名上增量实现；portable schema 仍为3。
+机器约束强制最终内容版本的所有批准命令与源完整性；架构/覆盖/诊断建议保持 advice-only。
+完整 [变更文件](files.md)、[12项交付回答](implementation-v0.4.md)。
+
+## 实际执行
 
 ```powershell
-npx --yes pnpm@10.32.1 install --offline --frozen-lockfile
+npx --yes pnpm@10.32.1 install --offline --lockfile-only
 npx --yes pnpm@10.32.1 check
-node apps/cli/dist/main.js --help
-node apps/cli/dist/main.js eval --suite personal-engineering --online --als-path D:\Kyle\auto-label-studio --pollen-path E:\Agent_Harness\.devagent-evals\real-projects\Pollen_Instrument
+node evals/personal-engineering/run.mjs --als-path D:\Kyle\auto-label-studio --pollen-path E:\Agent_Harness\.devagent-evals\real-projects\Pollen_Instrument
+node evals/native-workflow/run.mjs --home <explicit-fixture-state> --auth-attachment <explicit-managed-auth>
+node evals/native-workflow/compare.mjs --home <same-state> --auth-attachment <same-auth>
+node evals/native-workflow/compare.mjs --home <same-state> --auth-attachment <same-auth> --case work-continuation
+node evals/native-workflow/evolution.mjs --home <same-state>
+node evals/native-workflow/continuation.mjs --home <same-state>
+node evals/native-workflow/profile.mjs --home <dedicated-fixture-state> --auth-attachment <same-auth>
+node evals/native-workflow/report.mjs --home <same-state> --compatibility-report <fresh-offline-report>
 ```
 
-最终 check：typecheck、lint、42单元、build、19集成全部通过；集成约70秒。CLI演示运行约31秒，**退出码2**准确表示在线认证阻塞，不是离线失败。unit/integration由check单独运行，E2E JSON内这两层仍标skipped，避免声称脚本运行了未运行的检查；本表记录实际独立check结果。
+check 实际执行 typecheck、lint、48单元、build、21集成，退出0；最终完整日志与退出记录已保存，
+报告脚本读取真实日志数量与Hash，不自行声称运行了测试。Skill 使用官方 skill-creator 的
+quick_validate.py，uv 离线 Python3.14 / PyYAML6.0.3：valid。没有新增生产依赖。
+V3 全离线 E2E、迁移、演进、安全和真实只读回归通过；其 fresh HOME 未登录，native 子层 blocked
+是预期结果，不与已授权 V4 state 混淆。
 
-4个Skill用官方skill-creator/scripts/quick_validate.py，uv Python3.14 + PyYAML6.0.3验证，全部valid，没有安装全局Python依赖。frozen lock离线安装通过，未下载新依赖。git diff --check与变更代码1500行上限检查通过；产物/认证目录被忽略。常见凭据模式检查无命中，不替代敏感内容人工审查或绝对无秘密保证。
-
-环境：Windows x64，Node24.19.0、pnpm10.32.1、TypeScript5.9.3、Git2.55.0.windows.3、Docker Linux29.7.2；实际测试镜像 sha256:a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5。原生CLI0.157.1与可选DSH provider0.153.4独立，未升级宿主CLI。
+环境：Windows x64、Node24.19.0、pnpm10.32.1、Codex0.157.1、账户实际目录模型 gpt-6-astra/low。
+实际 Docker Node24 Linux 镜像 SHA：a5f4366e834695d5f363b920c104953a535d3a9864d1bdf74566a0ebe01daee5。
+授权由用户在官方浏览器/localhost 回调完成，没有复制宿主认证。仅专用模拟源码/日志在线。
 
 ## 可审查本机证据
 
-以下均在被忽略的 .devagent-evals，不进入源码仓库。相对路径以该状态根为准：
+受管在线状态根：
+`E:\Agent_Harness\.devagent-evals\v04-native-onboarding\state`。下列路径相对它：
 
 ```text
-E:\Agent_Harness\.devagent-evals\v3-run-KxsScx\state-a
-reports/personal-engineering-latest.json
-reports/personal-engineering-latest.md
-reports/personal-engineering-1792481879284.json
-reports/onboard-030c17b013714a91a5582b80fc826065.onboarding.json
-artifacts/onboard-030c17b013714a91a5582b80fc826065/provisioning.patch
-reports/attachment-8f8ad010dca443f4ab97561b63c4226b.native-inspection.json
-reports/attachment-8f8ad010dca443f4ab97561b63c4226b.native-session.json
-reports/task-1ef3fcfe02194d1f97e3abfeb6ba98fb.json
-reports/task-fdf77dfa375e4e6eaf565a257f7fe337.json
-artifacts/workspace-ee2ebc98abfc43f9a69c6cbe231f7425/changes.patch
-evidence/execution-6efd8842b0584f9489a34dadfc2c6ee6.json
-evidence/execution-17ab49bd289845adb52e0bf08d0d8fff.json
-evidence/execution-839e2437a278499e8f0fdc5bba41fabc.json
-evidence/execution-1c1050f2d9824f6b9e4a962a24991446.json
-evidence/execution-ac534d96fac44c14bd5fe72a44d47ec9.json
-artifacts/backups/backup-73f3f045691c4ae5a1a53e3bbe5b1235.devagent-backup.json
+reports/engineering-v04-latest.json                 # 签名的11层汇总
+artifacts/v04-check-result.json                     # 实际check退出0
+artifacts/v04-check-sanitized.txt                   # 实际check完整日志
+reports/attachment-8ee3ecbdec4c4ca7a750893bad5cdbbd.native-session.json
+reports/native-workflow-latest.json
+reports/native-continuation-latest.json
+reports/native-profile-latest.json
+reports/runtime-evolution-latest.json
+reports/comparison-1792485746169.json                # 第一轮4类，含接续失败
+reports/comparison-1792486219298.json                # 修订2，接续两侧通过
+artifacts/workspace-0f2f971319c04b12b6c6bc2a6dfedce9/changes.patch
+runtime-observations/runtime-2b3933fa84ef47fb8bd2d7c23346822b.json
+reports/task-563df4cb61484d62a8ec56fd8aa167fd.native-work.json
+reports/task-ddd7826430fb43dfaffecb9f2070ce95.native-work.json
+validation-reports/task-ddd7826430fb43dfaffecb9f2070ce95.json
+artifacts/workspace-52973f4f4f5046c9bf1fd6d27d5dc0c4/changes.patch
 ```
 
-首份演进Evidence为实际失败；第二份为独立grader通过；第三份为实现Task的实际诊断调用；第四份为新Task的独立复验；第五份为新Task使用采纳能力。签名记录指向stdout/stderr产物及Hash，不只保存“passed”字符串。备份演示使用仅用于fixture的模拟口令，不用个人认证。设备B为同级state-b，当前绑定local-only，规则读取false。
+初始失败 execution-ca957e9f0e2142b689534c02573a4ac4；首次模型修复后通过
+execution-69b5525bc0f64c2286967cbfd3f9d64a / execution-fe8a96eb14f94105b71a01c06b573699。
+下一会话复验 execution-1b908496dc4947e3852314f8eb04f4e7 / execution-564eb3bfb14748feb2abd705101077d5。
+记录在 evidence/<id>.json，关联 stdout/stderr Hash、版本与退出码。MCP 回执在对应 artifacts/<task>/mcp-receipts。
+最终补强运行 native-eval-1792487839028：Work work-6150892c91e94305a495984c91d09bb1
+保留初始失败 execution-3fb3a7f75ea44e00b7d606cee41fc5a9；模型 Task task-28477b2760934f3291b37b00a5c571c6
+最终通过 execution-8e0451331c0142f08783971da61592ac / execution-99bfb7e06d5e43128ddb3849af51dd7a。
+同一逻辑 Work 同时记录历史 failed 和当前 verified；旧失败不会抹掉，也不会阻止当前最终版本正确通过。
+升级 Proposal proposal-ab48d4e3ff5d436baadc696a9eacb57a；下一 Task task-8f4bbe12bb2b41a699d7198c5189a54f 真调用。
 
-ALS检查commit c2b759cdb20e0bffb5b72ce74d9cf2940fdb19ab；Pollen授权副本commit d776a95bbffa57a129a1823f61dd2a1726362d6c。完整before/after保存在results.realProjects.projects。ALS AGENTS候选由于敏感字段被拒绝；原规范未改。Pollen未假定WPF。无业务命令/硬件/数据库/真实训练，modelCalls=0。完整性coverage=bounded-source-content+tree-metadata+git-index-config-head，不声称大型排除数据递归字节哈希。
+离线兼容/真实源报告：
+`E:\Agent_Harness\.devagent-evals\v3-run-3Qm7kC\state-a\reports\personal-engineering-latest.json`。
+ALS head c2b759cdb20e0bffb5b72ce74d9cf2940fdb19ab；Pollen 授权副本 head d776a95bbffa57a129a1823f61dd2a1726362d6c。
+完整性覆盖 bounded source、tree metadata 与 Git index/config/HEAD；不承诺大型排除数据的逐字节递归 Hash。
 
-## 未完成、跳过与后续风险
+## 失败、阻塞与未运行
 
-- 原生独立认证缺失：真实模型调用、回答正确性、Skill自动触发和自主开发仍blocked/未验收；DSH按用户明确选择暂缓，无Key测试不伪装通过。
-- 尚未运行：认证后原生工具/读取权限完整验收、Ubuntu实机、Graphify语义runner、WinForms动态UI、真实GPU/CVAT/硬件/数据库、安装升级部署。当前无适当授权/隔离环境；真实项目本轮限定只读。
-- 演进是确定性实现/人工审查模拟，证明基础设施闭环，不证明Codex自主升级。无直接Codex同任务对照数据，不能量化效率增益。
-- 过滤快照、词法检索/静态层、有限历史、跨文件崩溃回滚、宿主HMAC可信性、正则脱敏和容器共享内核边界见security.md。原生宿主read-only不是Docker全文件隔离，不能靠配置文字视作验收。
-- 真实工程的全部构建/测试并未运行：用户本轮仅授权只读接入，没有业务执行许可。19项集成执行的是受管fixture和Harness自身。
-
-12项交付问题见 [implementation-v0.3.md](implementation-v0.3.md)，操作步骤见 [personal-engineering.md](personal-engineering.md)，完整变更见 [files.md](files.md)。V0.2历史验收保留于 [history/v0.2-verification.md](history/v0.2-verification.md)。
+- 认证后早期遇到代理环境未继承、Code Mode host 关闭、提交版本 oracle 混淆和 Plan 工具 schema 不明确；
+  修复后重新验收。自主编码首次 Plan 被拒绝的 failed Task 保留，没有用固定补丁代替模型修复。
+- 原生 Hooks 配置实际已安装，但各事件真回调仍 unobserved；额外无模型生命周期探针未完成，未伪装通过。
+  受管 exec 元数据、签名 MCP 回执和显式 finalize 可独立运行。Skill 自动选择未证明，当前显式调用。
+- 四类对照增强版耗时/Token 更高，样本与主机负载/缓存不足以推断显著性。详见 engineering-evals.md。
+- 合成偏好通过真实模型答案 oracle；未上传真实个人数据，不能据此宣称个人开发效率已提升。
+- 未运行真实 ALS/Pollen 构建、业务测试、Worker、DB写入、GPU/CVAT、硬件、安装部署；本轮仅授权只读。
+  Node fixture 不等于 FastAPI/Electron 全环境；独立 ALS 观测 Patch 仅候选，没有应用或业务环境测试。
+- Ubuntu、完整原生宿主读取隔离、普通 IDE 自动关联未验收；DSH 按用户选择暂缓。
+  Work/事件跨文件崩溃、HMAC宿主信任、有限容量、删除范围和容器共享内核边界见 security.md。

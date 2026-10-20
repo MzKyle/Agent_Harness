@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { HarnessError, projectRules, newId, filterContent, digest, memoryKinds, relevance, type Task } from '@devagent/core';
+import { HarnessError, projectRules, newId, filterContent, digest, memoryKinds, relevance, revision, type Task } from '@devagent/core';
 import type { EngineeringSystem } from '@devagent/adapters';
 
 export function createFunctionalServer(system: EngineeringSystem, scope: { projectId?: string; taskId?: string; localOnly?: boolean; personalContext?: boolean } = {}, delegate?: (task: Task, prompt: string, signal: AbortSignal) => Promise<unknown>) {
@@ -31,7 +31,12 @@ export function createFunctionalServer(system: EngineeringSystem, scope: { proje
         const sourcePaths = name === 'read_code_slice' && typeof value.path === 'string' ? [value.path] : name === 'search_code' && Array.isArray(value.matches) ? value.matches.flatMap((match: unknown) => match && typeof match === 'object' && 'path' in match && typeof match.path === 'string' ? [match.path] : []).slice(0, 50) : [];
         const recentStates = name === 'get_recent_work' && Array.isArray(wrapped.result) ? wrapped.result.flatMap((item: unknown) => item && typeof item === 'object' && 'state' in item && typeof item.state === 'string' ? [item.state] : []) : [];
         const payload = { tool: name, status: 'completed', taskId: scope.taskId ?? null, projectId: scope.projectId ?? null, at: new Date().toISOString(), resultHash: digest(JSON.stringify(wrapped)), sourcePaths, recentStates };
-        await system.store.put(`${bucket}/${newId('execution')}.json`, { ...payload, signature: await system.store.sign(payload) });
+        const receiptId = newId('execution');
+        await system.store.put(`${bucket}/${receiptId}.json`, { ...payload, signature: await system.store.sign(payload) });
+        if (scope.taskId) {
+          const work = await system.work.forTask(scope.taskId);
+          if (work) await system.work.event(work.id, work.leaseId, { hook_event_name: 'PostToolUse', tool_name: name, event_id: receiptId, status: 'completed', task_id: scope.taskId, project_id: work.projectId }, 'native-event').catch(() => undefined);
+        }
         return { content: [{ type: 'text', text: JSON.stringify(wrapped) }], structuredContent: wrapped };
       } catch (error) {
         const code = error instanceof HarnessError ? error.code : 'OPERATION_REFUSED';
@@ -53,7 +58,9 @@ export function createFunctionalServer(system: EngineeringSystem, scope: { proje
   register('get_module_dependencies', { projectId, path: file }, true, async ({ projectId: id, path }) => { const { root } = await authorize(id, true); return system.code.dependencies(id, path, root); });
   register('get_project_rules', { projectId }, true, async ({ projectId: id }) => { const { root } = await authorize(id, true); return projectRules(system.registry, id, root); });
   register('get_context_brief', { projectId, task: z.string().max(2000).optional(), budget: z.number().int().min(1024).max(16000).optional() }, true, async ({ projectId: id, task, budget }) => {
-    await authorize(id, true); return system.context.brief(id, task ?? '', budget ?? 6000, Boolean(scope.personalContext || scope.localOnly));
+    const bound = await authorize(id, true); const brief = await system.context.brief(id, task ?? '', budget ?? 6000, Boolean(scope.personalContext || scope.localOnly));
+    const workspace = bound.task?.workspaceId ? await system.workspaces.get(bound.task.workspaceId) : null;
+    return { ...brief, workspace: workspace ? { id: workspace.id, sourceRevision: workspace.sourceRevision, baselineGitRevision: revision(bound.root!), workingContentRevision: await system.workspaces.workingRevision(workspace.id), meaning: 'Source revision identifies the original input. The managed baseline Git commit differs by design; content hash binds final verification.' } : null };
   });
   const preferences = async (task: string) => {
     if (!scope.personalContext && !scope.localOnly) throw new HarnessError('PERSONAL_CONTEXT_NOT_AUTHORIZED');
@@ -72,6 +79,16 @@ export function createFunctionalServer(system: EngineeringSystem, scope: { proje
   });
   register('refresh_project_profile', { projectId }, false, async ({ projectId: id }) => { await authorize(id, true); return system.profiles.refresh(id); });
   register('get_recent_work', { projectId, limit: z.number().int().min(1).max(20).optional() }, true, async ({ projectId: id, limit }) => { await authorize(id, true); return system.history.recent(id, limit ?? 5); });
+  register('get_work_sessions', { projectId }, true, async ({ projectId: id }) => { await authorize(id, true); return (await system.work.list(id)).slice(0, 10).map(work => system.work.public(work)); });
+  register('get_work_status', { workId: z.string().regex(/^work-[a-f0-9]{32}$/) }, true, async ({ workId }) => { const work = await system.work.get(workId); await authorize(work.projectId, true); return system.work.public(work); });
+  for (const name of ['get_runtime_diagnostics', 'get_error_timeline', 'get_state_consistency', 'get_regression_context']) register(name, { projectId, runtimeId: z.string().regex(/^runtime-[a-f0-9]{32}$/).optional(), taskId: z.string().regex(/^task-[a-f0-9]{32}$/).optional(), workflowId: z.string().regex(/^[a-zA-Z0-9_.:-]{1,100}$/).optional(), traceId: z.string().regex(/^[a-zA-Z0-9_.:-]{1,100}$/).optional() }, true, async ({ projectId: id, runtimeId, taskId, workflowId, traceId }) => {
+    await authorize(id, true); const result = await system.runtime.query(id, runtimeId, { ...(taskId ? { taskId } : {}), ...(workflowId ? { workflowId } : {}), ...(traceId ? { traceId } : {}) });
+    if (result.status !== 'available') return result;
+    if (name === 'get_error_timeline') return { runtimeId: result.id, evidenceId: result.evidenceId, stale: result.stale, events: result.snapshot.events.filter(item => item.severity !== 'info').sort((a, b) => a.at.localeCompare(b.at)) };
+    if (name === 'get_state_consistency') return { runtimeId: result.id, evidenceId: result.evidenceId, stale: result.stale, findings: result.findings.filter(item => item.code === 'state-mismatch' || item.code === 'illegal-transition') };
+    if (name === 'get_regression_context') return { runtimeId: result.id, evidenceId: result.evidenceId, workspaceRevision: result.workspaceRevision, stale: result.stale, serviceVersion: result.serviceVersion, sourceCandidates: result.sourceCandidates, observedFailures: result.findings, verification: 'Recorded execution status must be checked separately; findings are observations' };
+    return result;
+  });
   register('search_project_memory', { projectId, query: z.string().min(1).max(500) }, true, async ({ projectId: id, query }) => { await authorize(id, true); return system.memory.search({ projectId: id, query, limit: 10 }); });
   register('propose_project_memory', { projectId, type: z.enum(memoryKinds), topic: z.string().min(1).max(160), content: z.string().min(1).max(2000) }, false, async ({ projectId: id, type, topic, content }) => { await authorize(id, true); return system.memory.propose({ domain: 'project', projectId: id, type, topic, content }); });
   register('onboard_analyze', { projectId }, true, async ({ projectId: id }) => { await authorize(id, true); return system.onboarding.analyze(id); });
@@ -92,15 +109,24 @@ export function createFunctionalServer(system: EngineeringSystem, scope: { proje
     const boundTask = async () => {
       const task = await system.tasks.get(scope.taskId!); await authorize(task.projectId, true); return task;
     };
-    register('submit_plan', { plan: z.json() }, false, async ({ plan }) => { await boundTask(); return system.tasks.submitPlan(scope.taskId!, plan); });
+    const engineeringPlan = z.object({ requirement: z.string().min(1).max(4000), facts: z.array(z.object({ source: z.string(), finding: z.string() }).strict()).min(1).max(40),
+      assumptions: z.array(z.string()).max(20), affectedModules: z.array(file).min(1).max(40), steps: z.array(z.object({ change: z.string(), verification: z.string() }).strict()).min(1).max(20), acceptance: z.array(z.string()).min(1).max(20),
+      observability: z.object({ states: z.array(z.string()), logs: z.array(z.string()), correlationIds: z.array(z.string()), errorCodes: z.array(z.string()), recovery: z.string(), testEntry: z.string(), regressionRisks: z.array(z.string()), diagnosticTools: z.array(z.string()), sensitiveData: z.string(), overhead: z.string() }).strict() }).strict();
+    register('submit_plan', { plan: engineeringPlan }, false, async ({ plan }) => { await boundTask(); return system.tasks.submitPlan(scope.taskId!, plan); });
     register('record_capability_gap', { report: z.json() }, false, async ({ report }) => { await boundTask(); return system.tasks.gap(scope.taskId!, report); });
+    register('record_work_progress', { decisions: z.array(z.string().min(1).max(1000)).max(20), outstanding: z.array(z.string().min(1).max(1000)).max(20), resolved: z.array(z.string().min(1).max(1000)).max(20).optional() }, false, async ({ decisions, outstanding, resolved }) => { await boundTask(); const work = await system.work.forTask(scope.taskId!); if (!work) throw new HarnessError('WORK_SESSION_REQUIRED'); return system.work.progress(work.id, decisions, outstanding, resolved ?? []); });
     register('get_workspace_diff', {}, true, async () => { const task = await boundTask(); if (!task.workspaceId) throw new HarnessError('NO_WORKSPACE'); return system.workspaces.diff(task.workspaceId); });
     register('write_workspace_code', { path: file, content: z.string().max(65536) }, false, async ({ path, content }) => {
       const task = await system.tasks.requireCoding(scope.taskId!); await boundTask();
       const filtered = filterContent(content); if (filtered.redactions) throw new HarnessError('SENSITIVE_WRITE_DENIED');
       return system.workspaces.write(task.workspaceId!, path, content);
     });
-    register('run_approved_command', { commandId: z.string().max(80) }, false, async ({ commandId }, signal) => { await boundTask(); return system.tasks.runApproved(scope.taskId!, commandId, signal); });
+    register('run_approved_command', { commandId: z.string().max(80) }, false, async ({ commandId }, signal) => {
+      await boundTask(); const evidence = await system.tasks.runApproved(scope.taskId!, commandId, signal);
+      // Explicit marker opt-in; failures to import do not rewrite execution truth or grant authority.
+      if ((await system.store.text(evidence.stdoutArtifact)).includes('DEVAGENT_RUNTIME_SNAPSHOT ')) await system.runtime.capture(evidence.id).catch(() => undefined);
+      return evidence;
+    });
     if (delegate) register('delegate_codex', { prompt: z.string().min(1).max(12000) }, false, async ({ prompt }, signal) => {
       await boundTask(); const task = await system.tasks.requireCoding(scope.taskId!);
       const filtered = filterContent(prompt); if (filtered.redactions) throw new HarnessError('SENSITIVE_DELEGATION_PROMPT');

@@ -1,4 +1,4 @@
-# V0.3 安全边界
+# V0.4 安全边界
 
 ## 信任和授权
 
@@ -26,11 +26,21 @@
 
 ## 原生 Codex
 
-发现检查真实运行官方 app-server，但不启动模型。独立 HOME/CODEX_HOME 和最小环境，不搜索或复制系统认证；官方交互登录由用户完成，UAC/密码提示不绕过。MCP 接入仍受 scope/分享门禁约束。原生配置关闭 shell/unified exec/code mode、浏览器、插件、apps、web 和 multi-agent，使用 read-only。
+发现检查真实运行官方 app-server，但不启动模型。独立 HOME/CODEX_HOME 和最小环境，不搜索或复制系统认证；官方交互登录由用户完成，UAC/密码提示不绕过。MCP 接入仍受 scope/分享门禁约束。原生配置关闭 shell_tool、图片、浏览器、插件、apps、web 和 multi-agent，使用 read-only。当前模型需要官方 Code Mode host 才能实际使用工具，因此启用已安装 host；没有实现第二套代码执行器。unified_exec 的用户关闭值在此版本被忽略，不能把配置中的 false 当成实际禁用；命令执行开关依靠官方 shell_tool，容器命令仍经独立 MCP 门禁。
 
-原生宿主 read-only **不是**与 Docker 等价的全文件读取隔离；不同 Codex 版本的原生工具/配置行为可能变化。已认证模型路径和完整原生读取权限验收尚未完成；不能用配置文本或离线发现证明其安全性/模型行为。真实源保持 local-only，当前独立环境无 auth，实际模型调用为0。进一步放开真实源之前必须完成版本对应的权限/读取边界验收。官方 [权限文档](https://learn.chatgpt.com/docs/permissions) 与 [app-server 文档](https://learn.chatgpt.com/docs/app-server) 存在随版本变化的读权限配置，当前不盲用不兼容新字段。
+原生宿主 read-only **不是**与 Docker 等价的全文件读取隔离；不同 Codex 版本的原生工具/配置行为可能变化。已授权的独立环境已实测 fixture 模型/MCP/修复，完整宿主读取边界仍未验收，不能放开真实源。ALS/Pollen 继续 local-only。进一步分享业务源之前必须完成版本对应的读取权限验收。官方 [权限文档](https://learn.chatgpt.com/docs/permissions) 与 [app-server 文档](https://learn.chatgpt.com/docs/app-server) 存在随版本变化的读权限配置，当前不盲用不兼容新字段。
 
-模型会话验收要求服务端签名回执和真实 turn 完成，核对真实 revision、实际返回路径、禁止操作和最近任务状态。只落盘过滤后的 transcript；结构化答案先在内存检查，避免日志脱敏把合法 commit hash 遮蔽导致误判。CLI 未暴露精确后端请求数，完成 turn 数仅作为 modelCalls 下界，明确写入报告。
+模型会话验收要求服务端签名回执和真实 turn 完成，核对原项目 revision、实际返回路径、禁止操作和最近任务状态。默认只落盘事件类型、ID、Hash 和官方 usage；完整回答仅在内存交独立 oracle，不保存完整 transcript。exec 使用 --ephemeral / history none。CLI 未暴露精确后端请求数，完成 turn 数仅作为 modelCalls 下界，usage 是原生报告值而非账单。
+
+仅继承明确设置的代理/CA 变量以满足原生联网，不记录其值。`attach --auth-from` 只引用同一受管
+state 中显式选择的 fixture 认证 HOME，不复制 auth 文件；每次运行覆盖精确 MCP 项目/Task 参数，
+同认证 HOME 的模型运行使用排他锁。没有扫描或导入宿主默认登录。
+
+Work/事件/lease 使用本机 HMAC；事件只允许白名单元数据，源文本和工具输入输出不存储。
+Hooks 失败、重复、缺失、伪造事件都不能生成测试证据。原生 hook 真回调当前未观测到，受管事件
+降级独立验收。运行快照同样是诊断陈述，签名不证明任意恶意程序输出的内容为真。
+快照仅从签名隔离命令产物捕获，验证真实 Task/Workspace 归属、时间、Hash、大小和敏感字段。
+Work 删除、导出、迁移、容量和跨文件崩溃边界见 [会话文档](codex-work-sessions.md)。
 
 ## 容量与剩余风险
 

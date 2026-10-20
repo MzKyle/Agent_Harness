@@ -10,6 +10,7 @@ import { ProjectIdentities } from './identity.js';
 import { contractSchema, type ProjectContract } from './contracts.js';
 
 export class ProjectCapabilities {
+  runtimeStatus?: (id: string) => Promise<{ status: 'configured' | 'verified' | 'unavailable'; detail: string }>;
   constructor(readonly data: IntelligenceData, readonly identities: ProjectIdentities, readonly registry: ExternalRegistry, readonly code: CodeIntelligence, readonly diagnostics: Diagnostics, readonly evidence: EvidenceStore, readonly workspaces: WorkspaceManager) {}
   async assess(id: string, probeExecution = false): Promise<ProjectContract> {
     const identity = await this.identities.resolve(id); const stable = identity.stableProjectId; const record = await this.registry.get(stable);
@@ -20,7 +21,8 @@ export class ProjectCapabilities {
     add('project-rules', record.rulesAllowed ? 'configured' : 'unavailable', record.rulesAllowed ? 'Explicit local rules read grant exists; instructions cannot grant permissions' : 'Engineering rules require a separate read grant');
     const imported = await this.diagnostics.query({ projectId: stable, limit: 1 });
     add('logs', imported.events.length ? 'verified' : record.config.observability.logs.length ? 'discovered' : 'unavailable', imported.events.length ? 'An explicitly imported sanitized project event was queried' : 'No authorized live log adapter is established');
-    add('runtime-state', 'unavailable', 'Framework dependencies do not prove access to a live worker or service');
+    const runtime = this.runtimeStatus ? await this.runtimeStatus(stable) : { status: 'unavailable' as const, detail: 'Framework dependencies do not prove access to a live worker or service' };
+    add('runtime-state', runtime.status, runtime.detail);
     add('ui', 'unsupported', 'No verified safe Windows desktop UI runner is installed');
     add('hardware', 'forbidden', 'MockHardware discovery never authorizes production hardware');
     add('source-write', 'forbidden', 'Current registry grant is read-only; onboarding needs independent file/diff/revision/branch approval');
@@ -50,7 +52,10 @@ export class ProjectCapabilities {
     if (!saved) return this.assess(stable);
     const current = revision((await this.registry.get(stable)).root);
     // Recheck adopted workspace extensions; a changed workspace invalidates old evidence.
-    const checked = saved.entries.some(entry => entry.id.startsWith('extension-')) ? await this.assess(stable) : saved;
+    const runtime = this.runtimeStatus ? await this.runtimeStatus(stable) : null;
+    const previousRuntime = saved.entries.find(entry => entry.id === 'runtime-state');
+    const runtimeChanged = runtime && (previousRuntime?.status !== runtime.status || previousRuntime.detail !== runtime.detail);
+    const checked = runtimeChanged || saved.entries.some(entry => entry.id.startsWith('extension-')) ? await this.assess(stable) : saved;
     return { ...checked, stale: current !== checked.sourceRevision, permissionAuthority: 'none' as const };
   }
 }

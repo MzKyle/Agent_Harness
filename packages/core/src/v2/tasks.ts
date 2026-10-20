@@ -55,6 +55,26 @@ export class TaskService {
     const evidence = await this.execution.run(task.workspaceId!, commandId, id, signal);
     await this.store.locked(id, async () => { const latest = await this.get(id); latest.evidenceIds.push(evidence.id); await this.save(latest); }); return evidence;
   }
+  async verifyCompletion(task: Task) {
+    if (task.mode !== 'isolated') return;
+    if (!task.workspaceId || !task.plan) throw new HarnessError('MISSING_FINAL_VERIFICATION');
+    const revision = await this.workspaces.workingRevision(task.workspaceId);
+    const commands = (await this.store.list<{ workspaceId: string; id: string }>('approvals')).filter(command => command.workspaceId === task.workspaceId);
+    const verified = new Set<string>();
+    for (const id of task.evidenceIds) {
+      const evidence = await this.execution.evidence.get(id);
+      if (evidence.taskId !== task.id || evidence.workspaceId !== task.workspaceId) throw new HarnessError('TASK_EVIDENCE_SCOPE_DENIED');
+      if (await this.execution.evidence.isVerified(id, revision)) verified.add(evidence.commandId);
+    }
+    if (!commands.length || !commands.every(command => verified.has(command.id))) throw new HarnessError('MISSING_FINAL_VERIFICATION');
+    await this.workspaces.diff(task.workspaceId);
+  }
+  async complete(id: string) {
+    return this.store.locked(id, async () => {
+      const task = await this.get(id); if (task.state !== 'running') throw new HarnessError('TASK_NOT_RUNNING');
+      await this.verifyCompletion(task); task.state = 'succeeded'; task.reason = null; task.finishedAt = new Date().toISOString(); await this.save(task); return task;
+    });
+  }
   async run(projectId: string, prompt: string, mode: Task['mode'], driver: AgentDriver, options: { workspaceId?: string; codex?: boolean; signal?: AbortSignal } = {}) {
     let task = await this.create(projectId, prompt, mode, options.workspaceId ?? null);
     try {
@@ -71,14 +91,7 @@ export class TaskService {
       task = await this.get(task.id); task.model = result.model; task.modelCalls = result.modelCalls;
       if (result.status === 'blocked') throw new HarnessError(result.reason ?? 'blocked_by_auth');
       if (result.status !== 'completed') throw new HarnessError(result.reason ?? 'AGENT_FAILED');
-      if (mode === 'isolated') {
-        const revision = await this.workspaces.workingRevision(task.workspaceId!);
-        const commands = (await this.store.list<{ workspaceId: string; id: string }>('approvals')).filter((command) => command.workspaceId === task.workspaceId);
-        const verified = new Set<string>();
-        for (const id of task.evidenceIds) if (await this.execution.evidence.isVerified(id, revision)) verified.add((await this.execution.evidence.get(id)).commandId);
-        if (!task.plan || !commands.length || !commands.every((command) => verified.has(command.id))) throw new HarnessError('MISSING_FINAL_VERIFICATION');
-        await this.workspaces.diff(task.workspaceId!);
-      }
+      await this.verifyCompletion(task);
       task.state = 'succeeded'; task.reason = null;
     } catch (error) {
       task = await this.get(task.id); task.reason = error instanceof HarnessError ? error.code : 'TASK_FAILED';
@@ -94,7 +107,7 @@ export class TaskService {
     let diff: unknown = null; if (task.workspaceId) try { diff = await this.workspaces.diff(task.workspaceId); } catch { diff = { status: 'unavailable' }; }
     const report = { task, evidence, diff, gaps: await Promise.all(task.gapIds.map((gap) => this.store.get(`gaps/${gap}.json`))),
       risks: ['Patch is never applied to the original source', 'Online success requires actual model and final-revision verification evidence'],
-      impact: task.plan?.affectedModules ?? [], summary: task.state === 'succeeded' ? 'Completed with recorded evidence' : `Not completed: ${task.reason}` };
+      impact: task.plan?.affectedModules ?? [], summary: task.state === 'succeeded' ? task.mode === 'analysis' ? 'Analysis completed; no implemented feature verified' : 'Completed with recorded evidence' : `Not completed: ${task.reason}` };
     await this.store.put(`reports/${id}.json`, report);
     await this.store.put(`reports/${id}.md`, `# Task ${id}\n\nStatus: **${task.state}**\n\nReason: ${task.reason ?? 'none'}\n\nWorkspace: ${task.workspaceId ?? 'none'}\n\n${evidence.markdown}\n\nPatch retained for human review; original source is not modified.\n`);
     await this.onReported?.(task); return report;
