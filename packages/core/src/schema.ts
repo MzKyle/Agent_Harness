@@ -25,7 +25,7 @@ export const commandSchema = z.object({
 });
 export const componentSchema = z.object({
   name: label, path: relativePath, languages: z.array(z.enum(['Python', 'TypeScript', 'JavaScript', 'C#'])),
-  frameworks: z.array(z.enum(['FastAPI', 'React', 'Electron', 'WPF', '.NET'])),
+  frameworks: z.array(z.enum(['FastAPI', 'React', 'Electron', 'WPF', 'Windows Forms', '.NET'])),
   buildSystems: z.array(z.enum(['setuptools', 'hatchling', 'poetry', 'uv', 'npm', 'pnpm', 'yarn', 'vite', 'tsc', 'MSBuild'])),
   testFrameworks: z.array(z.enum(['pytest', 'unittest', 'vitest', 'jest', 'playwright', 'xunit', 'nunit', 'mstest'])),
   sources: z.array(sourceSchema),

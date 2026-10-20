@@ -1,0 +1,3 @@
+{"trace_id":"fixture-trace","component":"api","severity":"info","message":"request accepted"}
+{"trace_id":"fixture-trace","component":"worker","severity":"error","message":"job failed"}
+{"trace_id":"fixture-trace","component":"ui","severity":"warning","message":"failure displayed"}

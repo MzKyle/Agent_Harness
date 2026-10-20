@@ -1,17 +1,17 @@
 {
-  "version": "0.2.0",
-  "name": "@devagent/dsh-bridge",
-  "types": "./dist/index.d.ts",
-  "exports": "./dist/index.js",
-  "type": "module",
-  "dependencies": {
-    "@deepseek-ai/dsh-skill-filesystem": "0.2.1-rc.2",
-    "@devagent/core": "workspace:*",
-    "@deepseek-ai/dsh-mcp-client": "0.2.1-rc.2",
-    "@deepseek-ai/dsh": "0.2.1-rc.2",
-    "yaml": "2.9.1",
-    "@deepseek-ai/cordis": "4.0.5",
-    "@deepseek-ai/dsh-subagent-codex": "0.2.1-rc.2"
-  },
-  "private": true
+    "version":  "0.3.0",
+    "name":  "@devagent/dsh-bridge",
+    "types":  "./dist/index.d.ts",
+    "exports":  "./dist/index.js",
+    "type":  "module",
+    "dependencies":  {
+                         "@deepseek-ai/dsh-skill-filesystem":  "0.2.1-rc.2",
+                         "@devagent/core":  "workspace:*",
+                         "@deepseek-ai/dsh-mcp-client":  "0.2.1-rc.2",
+                         "@deepseek-ai/dsh":  "0.2.1-rc.2",
+                         "yaml":  "2.9.1",
+                         "@deepseek-ai/cordis":  "4.0.5",
+                         "@deepseek-ai/dsh-subagent-codex":  "0.2.1-rc.2"
+                     },
+    "private":  true
 }

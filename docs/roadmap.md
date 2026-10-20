@@ -1,12 +1,14 @@
-# V0.2 后续工作
+# V0.3 后续工作
 
-基础工具、真实容器、离线 E2E 和真实源静态接入已验证；AI Functional MVP 在线验收未完成。
+已交付：可审查持久画像/记忆、真实项目画像、能力合约、增量 Onboarding/审批/应用/验证、Context MCP、稳定身份/加密迁移、确定性可验证演进闭环。验收状态见 verification.md。
 
-1. 隔离 Codex 原生认证后运行 eval --online；DSH 按用户选择暂留 blocked，提供已授权进程 Key 后补 smoke/真实修复。版本输出不算委派。
-2. 验证 authenticated DSH→MCP→官方 Codex provider、实际编辑、失败反馈与最终 grader。代码有入口，未实测需继续标明。
-3. 同任务/预算/grader 比较直接 Codex，记录耗时、步骤/工具次数、成功率和人工介入；当前无效率提升结论。
-4. 按实际 gap 在隔离 workspace 添加成熟 Graphify/Python/C# 语义 runner，不在业务源刷新图谱。
-5. 准备相应 Python/.NET 镜像或独立 Windows VM。动态 UI、GPU/CVAT、硬件和部署均需独立授权/隔离，本轮不执行。
-6. 完善人工归档/崩溃恢复、同工作区操作串行化，必要时 VM 隔离，不自动删历史或扩大权限。
+按价值与实际缺口继续：
 
-不新建自定义 Web UI、云上传、多用户调度、完整语言服务器、向量库或模型运行时。扩展以实际持久化 Capability Gap 为依据。
+1. 在独立原生环境完成官方认证和版本对应的文件读取/原生工具权限验收，再运行 fixture-only --online；验证真实模型 MCP 调用、输出准确性、失败反馈与自主修复。当前 blocked_by_auth，不把发现算通过。
+2. 比较直接 Codex 与 Harness：相同任务/预算/grader，记录耗时、成功率、工具使用、人工介入与上下文准确性。目前没有效率提升统计。
+3. 原生会话与 Harness Task 的可靠进展同步；普通外部 Codex 会话只在明确选择的历史导入后关联，避免全活动采集。改进崩溃恢复和人工归档界面。
+4. 基于实际 gap 添加安全 Graphify/Python/C# 语义 runner。当前是明确降级的静态分析，不在业务原源更新图谱。
+5. 独立 Windows VM/.NET Framework/WinForms runner 与成熟 UI 验证；GPU/CVAT/硬件/数据库/部署仍需独立授权与隔离。
+6. 对画像与长期决策增加更好的冲突审查、版本 diff 和容量归档；大规模语义检索须有真实词法召回不足证据再考虑新依赖。
+
+DSH 保持可选并按用户要求暂缓。无自动云同步、公开画像仓库、多用户调度或全局插件热加载；迁移不恢复认证和权限。

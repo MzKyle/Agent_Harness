@@ -1,16 +1,17 @@
 {
-  "version": "0.2.0",
-  "dependencies": {
-    "@devagent/dsh-bridge": "workspace:*",
-    "@devagent/adapters": "workspace:*",
-    "@devagent/core": "workspace:*"
-  },
-  "types": "./dist/index.d.ts",
-  "type": "module",
-  "name": "@devagent/cli",
-  "private": true,
-  "exports": "./dist/index.js",
-  "bin": {
-    "devagent": "./dist/main.js"
-  }
+    "version":  "0.3.0",
+    "dependencies":  {
+                         "@devagent/dsh-bridge":  "workspace:*",
+                         "@devagent/adapters":  "workspace:*",
+                         "@devagent/core":  "workspace:*",
+                         "@devagent/codex-integration":  "workspace:*"
+                     },
+    "types":  "./dist/index.d.ts",
+    "type":  "module",
+    "name":  "@devagent/cli",
+    "private":  true,
+    "exports":  "./dist/index.js",
+    "bin":  {
+                "devagent":  "./dist/main.js"
+            }
 }

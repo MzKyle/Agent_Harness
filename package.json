@@ -1,32 +1,32 @@
 {
-  "name": "devagent-harness",
-  "version": "0.2.0",
-  "private": true,
-  "type": "module",
-  "packageManager": "pnpm@10.32.1",
-  "engines": {
-    "node": "^22.13.0 || ^24.0.0 || >=26.0.0",
-    "pnpm": ">=10 <11"
-  },
-  "scripts": {
-    "build": "tsc -b",
-    "typecheck": "tsc -b --pretty false && tsc -p tsconfig.evals.json",
-    "lint": "eslint .",
-    "test": "vitest run --config vitest.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
-    "devagent": "node apps/cli/dist/main.js",
-    "mcp": "node packages/diagnostics-mcp/dist/main.js",
-    "dsh": "node packages/dsh-bridge/node_modules/@deepseek-ai/dsh/lib/bin.js",
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm test:integration"
-  },
-  "devDependencies": {
-    "@eslint/js": "10.0.1",
-    "@types/node": "24.19.2",
-    "eslint": "10.13.0",
-    "typescript": "5.9.3",
-    "typescript-eslint": "8.72.0",
-    "vitest": "5.0.5",
-    "@modelcontextprotocol/client": "2.2.0",
-    "yaml": "2.9.1"
-  }
+    "name":  "devagent-harness",
+    "version":  "0.3.0",
+    "private":  true,
+    "type":  "module",
+    "packageManager":  "pnpm@10.32.1",
+    "engines":  {
+                    "node":  "^22.13.0 || ^24.0.0 || \u003e=26.0.0",
+                    "pnpm":  "\u003e=10 \u003c11"
+                },
+    "scripts":  {
+                    "build":  "tsc -b",
+                    "typecheck":  "tsc -b --pretty false \u0026\u0026 tsc -p tsconfig.evals.json",
+                    "lint":  "eslint .",
+                    "test":  "vitest run --config vitest.config.ts",
+                    "test:integration":  "vitest run --config vitest.integration.config.ts",
+                    "devagent":  "node apps/cli/dist/main.js",
+                    "mcp":  "node packages/diagnostics-mcp/dist/main.js",
+                    "dsh":  "node packages/dsh-bridge/node_modules/@deepseek-ai/dsh/lib/bin.js",
+                    "check":  "pnpm typecheck \u0026\u0026 pnpm lint \u0026\u0026 pnpm test \u0026\u0026 pnpm build \u0026\u0026 pnpm test:integration"
+                },
+    "devDependencies":  {
+                            "@eslint/js":  "10.0.1",
+                            "@types/node":  "24.19.2",
+                            "eslint":  "10.13.0",
+                            "typescript":  "5.9.3",
+                            "typescript-eslint":  "8.72.0",
+                            "vitest":  "5.0.5",
+                            "@modelcontextprotocol/client":  "2.2.0",
+                            "yaml":  "2.9.1"
+                        }
 }

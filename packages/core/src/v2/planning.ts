@@ -28,5 +28,5 @@ export async function staticPlan(tasks: TaskService, code: CodeIntelligence, pro
   await tasks.gap(task.id, { gap: 'Unconfirmed runtime call relationships', why: 'Static evidence cannot prove the complete execution chain', existingAlternative: 'Read relevant declarations/imports and run approved integration checks in a workspace', crossProject: true, needsAdapter: true, suggestion: 'Add a project-specific trace adapter only when existing tools are insufficient', risks: ['Source data may be sensitive', 'Do not run production workflows'], requiresApproval: true });
   const record = await tasks.get(task.id); record.state = 'succeeded'; record.finishedAt = new Date().toISOString(); await tasks.save(record);
   const result = { taskId: task.id, origin: 'deterministic-static-planning-assistance', modelCalls: 0, architecture, rules: { sourceRevision: rules.sourceRevision, sources: rules.rules.map((rule) => rule.path), conflicts: rules.conflicts }, plan, unresolved: plan.assumptions };
-  await tasks.store.put(`reports/${task.id}.static-plan.json`, result); return result;
+  await tasks.store.put(`reports/${task.id}.static-plan.json`, result); await tasks.report(task.id); return result;
 }

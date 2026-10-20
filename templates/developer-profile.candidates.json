@@ -1,0 +1,6 @@
+[
+  { "type": "technical-background", "topic": "Candidate language background", "content": "C++ / Python / TypeScript / C# — review and edit before confirming.", "tags": ["languages"] },
+  { "type": "technical-background", "topic": "Candidate platforms and frameworks", "content": "Linux / Windows; ROS 2; industrial vision, system integration and desktop software development — unconfirmed.", "tags": ["platform", "vision", "desktop"] },
+  { "type": "engineering-preference", "topic": "Candidate architecture and delivery preference", "content": "Prefer structured architecture analysis, actual features, meaningful tests and explicit verification outcomes — awaiting review.", "tags": ["architecture", "testing"] },
+  { "type": "ai-preference", "topic": "Candidate engineering autonomy", "content": "Prefer sustained engineering implementation within authorized boundaries; do not substitute empty interfaces or plans for working features — awaiting review.", "tags": ["autonomy", "delivery"] }
+]

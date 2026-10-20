@@ -30,7 +30,8 @@ export async function functionalMain(argv: string[]) {
       if (operation === 'add') {
         if (!v['read-only']) throw new HarnessError('READ_ONLY_GRANT_REQUIRED');
         const record = await system.registry.add(required(v.path, 'path'), { rules: Boolean(v.rules), fixture: Boolean(v.fixture), shareFixture: Boolean(v['share-fixture']) });
-        result = { id: record.id, root: record.root, authorization: record.authorization, rulesAllowed: record.rulesAllowed, sourceSharing: record.sourceSharing, sourceWritten: false };
+        const identity = await system.identities.resolve(record.id);
+        result = { id: record.id, stableProjectId: identity.stableProjectId, duplicateCandidates: identity.duplicateCandidates, root: record.root, authorization: record.authorization, rulesAllowed: record.rulesAllowed, sourceSharing: record.sourceSharing, sourceWritten: false };
       } else if (operation === 'list') result = await system.registry.list();
       else if (operation === 'inspect') result = { ...await system.registry.inspect(project()), architecture: await system.code.architecture(project()) };
       else if (operation === 'remove') result = await system.registry.remove(project());

@@ -3,6 +3,6 @@
   "references": [
     { "path": "packages/core" }, { "path": "packages/adapters" },
     { "path": "packages/dsh-bridge" }, { "path": "packages/diagnostics-mcp" },
-    { "path": "apps/cli" }
+    { "path": "packages/codex-integration" }, { "path": "apps/cli" }
   ]
 }

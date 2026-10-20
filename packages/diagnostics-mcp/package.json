@@ -1,18 +1,18 @@
 {
-  "version": "0.2.0",
-  "dependencies": {
-    "zod": "4.4.3",
-    "@devagent/adapters": "workspace:*",
-    "@devagent/core": "workspace:*",
-    "@devagent/dsh-bridge": "workspace:*",
-    "@modelcontextprotocol/server": "2.2.0"
-  },
-  "types": "./dist/index.d.ts",
-  "type": "module",
-  "name": "@devagent/diagnostics-mcp",
-  "private": true,
-  "exports": "./dist/index.js",
-  "bin": {
-    "devagent-mcp": "./dist/main.js"
-  }
+    "version":  "0.3.0",
+    "dependencies":  {
+                         "zod":  "4.4.3",
+                         "@devagent/adapters":  "workspace:*",
+                         "@devagent/core":  "workspace:*",
+                         "@devagent/dsh-bridge":  "workspace:*",
+                         "@modelcontextprotocol/server":  "2.2.0"
+                     },
+    "types":  "./dist/index.d.ts",
+    "type":  "module",
+    "name":  "@devagent/diagnostics-mcp",
+    "private":  true,
+    "exports":  "./dist/index.js",
+    "bin":  {
+                "devagent-mcp":  "./dist/main.js"
+            }
 }

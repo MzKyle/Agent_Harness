@@ -6,10 +6,11 @@ import { StateStore, newId, digest } from './store.js';
 import { filterContent, permittedFile, portableFile } from './content.js';
 import { git, revision, sourceFiles } from './git.js';
 import { workspaceSchema, type Workspace, HarnessError } from './contracts.js';
+import { engineeringFiles, engineeringSkill, inspectEngineeringContent } from '../v3/files.js';
 
 export class WorkspaceManager {
   constructor(readonly store: StateStore, readonly registry: ExternalRegistry) {}
-  async create(projectId: string, requested = 'HEAD') {
+  async create(projectId: string, requested = 'HEAD', options: { includeEngineeringSkills?: boolean } = {}) {
     const project = await this.registry.get(projectId); const sha = revision(project.root, requested);
     const id = newId('workspace'); const directory = await this.store.directory(`workspaces/${id}/code`);
     const excluded: Workspace['excluded'] = []; const selected: { path: string; oid: string; mode: string }[] = [];
@@ -24,7 +25,7 @@ export class WorkspaceManager {
         portableFile(file);
         if (!['100644', '100755'].includes(mode) || type !== 'blob') throw new HarnessError('UNSUPPORTED_GIT_ENTRY', 'Symlinks, submodules and special entries require a separately reviewed snapshot policy');
         const folded = file.toLowerCase(); if (names.has(folded)) throw new HarnessError('CASE_COLLISION'); names.add(folded);
-        if (!permittedFile(file)) { excluded.push({ path: file, reason: 'snapshot-policy' }); continue; }
+        if (!permittedFile(file) && !(options.includeEngineeringSkills && engineeringSkill(file))) { excluded.push({ path: file, reason: 'snapshot-policy' }); continue; }
         if (selected.length >= 5000) throw new HarnessError('SNAPSHOT_FILE_LIMIT');
         selected.push({ path: file, oid, mode });
       }
@@ -39,10 +40,13 @@ export class WorkspaceManager {
         total += size; if (total > 48 * 1024 * 1024) throw new HarnessError('SNAPSHOT_BYTE_LIMIT');
         let materialized = bytes;
         try {
+          if (file.path === 'docs/agent-capabilities.json') { inspectEngineeringContent(file.path, bytes.toString('utf8')); }
+          else {
           const inspected = filterContent(bytes.toString('utf8'), file.path.endsWith('AGENTS.md') ? 'rules' : 'source');
           if (inspected.redactions) {
             if (file.path.endsWith('AGENTS.md')) { materialized = Buffer.from(inspected.content); excluded.push({ path: file.path, reason: 'rules-sanitized' }); }
             else { excluded.push({ path: file.path, reason: 'sensitive-content' }); continue; }
+          }
           }
         } catch { excluded.push({ path: file.path, reason: 'unsafe-content' }); continue; }
         const full = path.join(directory, file.path); if (!isWithin(directory, full)) throw new HarnessError('SNAPSHOT_ESCAPE');
@@ -51,7 +55,7 @@ export class WorkspaceManager {
       git(directory, ['init', '-b', 'workspace']);
       git(directory, ['config', 'user.name', 'DevAgent Snapshot']); git(directory, ['config', 'user.email', 'snapshot@localhost.invalid']);
       git(directory, ['config', 'core.autocrlf', 'false']);
-      git(directory, ['add', '--all']); git(directory, ['commit', '--allow-empty', '-m', 'Filtered source snapshot']);
+      git(directory, ['add', '--all', '--force']); git(directory, ['commit', '--allow-empty', '-m', 'Filtered source snapshot']);
       const workspace = workspaceSchema.parse({ schemaVersion: 2, id, projectId, sourceRevision: sha, baseline: revision(directory),
         createdAt: new Date().toISOString(), state: 'ready', included, excluded });
       await this.store.put(`workspaces/${id}.json`, workspace); return workspace;
@@ -74,8 +78,7 @@ export class WorkspaceManager {
     const root = await this.root(id); const listing = await sourceFiles(root, 15000, 12, true);
     if (listing.truncated) throw new HarnessError('WORKSPACE_SCAN_LIMIT');
     const hashes = [];
-    for (const file of listing.files) {
-      if (!permittedFile(file)) continue;
+    for (const file of [...new Set([...listing.files.filter(file => permittedFile(file)), ...await engineeringFiles(root)])].sort()) {
       const full = await checkedPath(root, file); const info = await lstat(full);
       if (info.size > 512 * 1024) throw new HarnessError('WORKSPACE_FILE_LIMIT');
       hashes.push([file, digest(await readFile(full))]);
@@ -102,7 +105,7 @@ export class WorkspaceManager {
     const workspace = await this.get(id); const root = await this.root(id); const listing = await sourceFiles(root, 15000, 12, true);
     if (listing.truncated) throw new HarnessError('WORKSPACE_SCAN_LIMIT');
     const tracked = git(root, ['ls-files', '-z']).toString().split('\0').filter(Boolean);
-    const files = [...new Set([...tracked, ...listing.files.filter((file) => permittedFile(file))])];
+    const files = [...new Set([...tracked, ...listing.files.filter((file) => permittedFile(file)), ...await engineeringFiles(root)])];
     for (const file of files) {
       portableFile(file);
       try {
@@ -110,10 +113,16 @@ export class WorkspaceManager {
         if (!info.isFile() || info.size > 512 * 1024) throw new HarnessError('DIFF_FILE_DENIED');
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
-    if (files.length) git(root, ['add', '--all', '--', ...files]);
+    if (files.length) git(root, ['add', '--all', '--force', '--', ...files]);
     const raw = git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--binary', workspace.baseline]).toString();
     if (Buffer.byteLength(raw) > 1024 * 1024) throw new HarnessError('DIFF_SIZE_LIMIT');
-    const filtered = filterContent(raw);
+    const sensitiveScan = raw.split(/(?=^diff --git )/m).filter(section => {
+      if (!section.startsWith('diff --git a/docs/agent-capabilities.json b/docs/agent-capabilities.json\n')) return true;
+      try { inspectEngineeringContent('docs/agent-capabilities.json', git(root, ['show', ':docs/agent-capabilities.json']).toString()); }
+      catch { inspectEngineeringContent('docs/agent-capabilities.json', git(root, ['show', `${workspace.baseline}:docs/agent-capabilities.json`]).toString()); }
+      return false;
+    }).join('');
+    const filtered = filterContent(sensitiveScan);
     if (filtered.redactions) throw new HarnessError('SENSITIVE_DIFF_REFUSED');
     const changedFiles = git(root, ['diff', '--cached', '--name-only', '-z', workspace.baseline]).toString().split('\0').filter(Boolean);
     const artifact = `artifacts/${id}/changes.patch`; await this.store.put(artifact, raw);

@@ -10,12 +10,14 @@ import { filterContent } from './content.js';
 
 export interface AgentDriver { run(task: Task, options: { signal?: AbortSignal; codex: boolean }): Promise<{ status: 'completed' | 'blocked' | 'failed'; reason: string | null; model: string | null; modelCalls: number }> }
 export class TaskService {
+  onReported?: (task: Task) => Promise<void>;
+  onGap?: (task: Task, gapId: string, report: unknown) => Promise<void>;
   constructor(readonly store: StateStore, readonly registry: ExternalRegistry, readonly workspaces: WorkspaceManager, readonly execution: ExecutionEngine, readonly code: CodeIntelligence) {}
   async get(id: string) { if (!/^task-[a-f0-9]{32}$/.test(id)) throw new HarnessError('TASK_ID_DENIED'); return taskSchema.parse(await this.store.get(`tasks/${id}.json`)); }
   async create(projectId: string, prompt: string, mode: Task['mode'], workspaceId: string | null = null) {
     await this.registry.get(projectId);
     const filtered = filterContent(prompt); if (filtered.redactions) throw new HarnessError('SENSITIVE_TASK_PROMPT_DENIED');
-    if (workspaceId && (await this.workspaces.get(workspaceId)).projectId !== projectId) throw new HarnessError('WORKSPACE_PROJECT_MISMATCH');
+    if (workspaceId && (await this.registry.get((await this.workspaces.get(workspaceId)).projectId)).id !== (await this.registry.get(projectId)).id) throw new HarnessError('WORKSPACE_PROJECT_MISMATCH');
     const task = taskSchema.parse({ schemaVersion: 2, id: newId('task'), projectId, workspaceId, prompt, mode, state: 'created', reason: null,
       createdAt: new Date().toISOString(), finishedAt: null, plan: null, evidenceIds: [], gapIds: [], toolCalls: 0, attempts: 0, maxAttempts: 3, model: null, modelCalls: 0, humanInterventions: 0 });
     await this.save(task); return task;
@@ -34,7 +36,7 @@ export class TaskService {
     const task = await this.get(id); const gap = gapSchema.parse(input); const gapId = newId('gap');
     if (task.gapIds.length >= 20) throw new HarnessError('TASK_GAP_LIMIT');
     const safe = filterContent(JSON.stringify(gap), 'rules'); if (safe.redactions) throw new HarnessError('SENSITIVE_GAP_REFUSED');
-    await this.store.put(`gaps/${gapId}.json`, { taskId: id, projectId: task.projectId, gap }); task.gapIds.push(gapId); await this.save(task); return { gapId, taskId: id };
+    await this.store.put(`gaps/${gapId}.json`, { taskId: id, projectId: task.projectId, gap }); task.gapIds.push(gapId); await this.save(task); await this.onGap?.(task, gapId, gap); return { gapId, taskId: id };
     });
   }
   private async coding(id: string) {
@@ -95,6 +97,6 @@ export class TaskService {
       impact: task.plan?.affectedModules ?? [], summary: task.state === 'succeeded' ? 'Completed with recorded evidence' : `Not completed: ${task.reason}` };
     await this.store.put(`reports/${id}.json`, report);
     await this.store.put(`reports/${id}.md`, `# Task ${id}\n\nStatus: **${task.state}**\n\nReason: ${task.reason ?? 'none'}\n\nWorkspace: ${task.workspaceId ?? 'none'}\n\n${evidence.markdown}\n\nPatch retained for human review; original source is not modified.\n`);
-    return report;
+    await this.onReported?.(task); return report;
   }
 }

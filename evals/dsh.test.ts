@@ -36,7 +36,7 @@ it('discovers and reads all three skills through the official filesystem provide
   try {
     const discovered = await provider.list({ cwd: repo });
     const candidates = Array.isArray(discovered) ? discovered : discovered.candidates;
-    expect(candidates.map((item: { name: string }) => item.name).sort()).toEqual(['feature-planning', 'observability-design', 'project-onboarding']);
+    expect(candidates.map((item: { name: string }) => item.name).sort()).toEqual(['devagent-project-engineering', 'feature-planning', 'observability-design', 'project-onboarding']);
     for (const item of candidates) {
       const loaded = await provider.get(item, { cwd: repo });
       expect(loaded).toBeDefined();

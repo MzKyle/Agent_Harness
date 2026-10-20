@@ -9,16 +9,18 @@ interface Event { timestamp: string | null; severity: string; message: string; t
 interface Diagnostic { id: string; source: string; importedAt: string; events: Event[]; truncated: boolean; projectId?: string | null; taskId?: string | null }
 const scrub = (value: unknown) => { try { return filterContent(String(value ?? ''), 'log').content.slice(0, 1200); } catch { return '[REFUSED]'; } };
 export class Diagnostics {
+  resolveProjectId?: (id: string) => Promise<string>;
   constructor(readonly store: StateStore, readonly evidence: EvidenceStore, readonly code: CodeIntelligence) {}
   async import(text: string, source: string, scope: { projectId?: string; taskId?: string } = {}) {
     if (Buffer.byteLength(text) > 1024 * 1024) throw new HarnessError('DIAGNOSTIC_SIZE_LIMIT');
     if ((await this.store.list('diagnostics')).length >= 200) throw new HarnessError('DIAGNOSTIC_RETENTION_LIMIT');
-    let projectId = scope.projectId ?? null;
+    let projectId = scope.projectId ? this.resolveProjectId ? await this.resolveProjectId(scope.projectId) : scope.projectId : null;
     if (projectId) await this.code.registry.get(projectId);
     if (scope.taskId) {
       if (!/^task-[a-f0-9]{32}$/.test(scope.taskId)) throw new HarnessError('TASK_ID_DENIED');
       const task = taskSchema.parse(await this.store.get(`tasks/${scope.taskId}.json`));
-      if (projectId && task.projectId !== projectId) throw new HarnessError('DIAGNOSTIC_PROJECT_MISMATCH'); projectId = task.projectId;
+      const owner = this.resolveProjectId ? await this.resolveProjectId(task.projectId) : task.projectId;
+      if (projectId && owner !== projectId) throw new HarnessError('DIAGNOSTIC_PROJECT_MISMATCH'); projectId = owner;
     }
     const events: Event[] = []; let truncated = false;
     const lines = text.split(/\r?\n/);
@@ -40,7 +42,9 @@ export class Diagnostics {
     if (options.diagnosticId && !/^diagnostic-[a-f0-9]{32}$/.test(options.diagnosticId)) throw new HarnessError('DIAGNOSTIC_ID_DENIED');
     for (const date of [options.from, options.to]) if (date && !Number.isFinite(Date.parse(date))) throw new HarnessError('INVALID_TIME_RANGE');
     const candidates = options.diagnosticId ? [await this.store.get<Diagnostic>(`diagnostics/${options.diagnosticId}.json`)] : await this.store.list<Diagnostic>('diagnostics');
-    const records = candidates.filter(record => (!options.projectId || record.projectId === options.projectId) && (!options.taskId || !record.taskId || record.taskId === options.taskId));
+    const owner = options.projectId && this.resolveProjectId ? await this.resolveProjectId(options.projectId) : options.projectId;
+    const scoped = await Promise.all(candidates.map(async record => ({ record, projectId: record.projectId && this.resolveProjectId ? await this.resolveProjectId(record.projectId) : record.projectId })));
+    const records = scoped.filter(item => (!owner || item.projectId === owner) && (!options.taskId || !item.record.taskId || item.record.taskId === options.taskId)).map(item => item.record);
     if (options.diagnosticId && !records.length) throw new HarnessError('DIAGNOSTIC_SCOPE_DENIED');
     const events = []; let truncated = records.some((record) => record.truncated); let bytes = 0;
     for (const record of records) for (const event of record.events) {
@@ -62,7 +66,10 @@ export class Diagnostics {
   async diagnose(projectId: string, taskId: string) {
     if (!/^task-[a-f0-9]{32}$/.test(taskId)) throw new HarnessError('TASK_ID_DENIED');
     const task = taskSchema.parse(await this.store.get(`tasks/${taskId}.json`));
-    if (task.projectId !== projectId) throw new HarnessError('TASK_PROJECT_MISMATCH');
+    if (task.projectId !== projectId) {
+      let matches = false; try { matches = (await this.code.registry.get(task.projectId)).id === (await this.code.registry.get(projectId)).id; } catch { /* Unknown IDs cannot match the bound task. */ }
+      if (!matches) throw new HarnessError('TASK_PROJECT_MISMATCH');
+    }
     const failures = await this.failures(taskId);
     const queries = [...new Set(failures.failures.flatMap((failure) => `${failure.stdout}\n${failure.stderr}`.match(/\b(?:AssertionError|TypeError|ReferenceError|timeout|failed|exception)\b/gi) ?? []))].slice(0, 3);
     const relatedCode = await Promise.all(queries.map((query) => this.code.search(projectId, query, { limit: 5 })));

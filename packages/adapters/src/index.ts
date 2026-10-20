@@ -96,6 +96,7 @@ export class DotnetAdapter implements ProjectAdapter {
         item.name = path.posix.basename(file, '.csproj').replace(/[^\p{L}\p{N}_. -]/gu, '-').slice(0, 96) || 'dotnet';
         item.languages.push('C#'); item.frameworks.push('.NET'); item.buildSystems.push('MSBuild');
         if (/<UseWPF>\s*true\s*<\/UseWPF>/i.test(text)) item.frameworks.push('WPF');
+        if (/<UseWindowsForms>\s*true\s*<\/UseWindowsForms>|<Reference\s+Include=["']System\.Windows\.Forms/i.test(text)) item.frameworks.push('Windows Forms');
         for (const [dependency, framework] of [['xunit', 'xunit'], ['NUnit', 'nunit'], ['MSTest.TestFramework', 'mstest']] as const) {
           if (text.toLowerCase().includes(`include="${dependency.toLowerCase()}"`)) item.testFrameworks.push(framework);
         }

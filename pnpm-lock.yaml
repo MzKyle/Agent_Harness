@@ -38,6 +38,9 @@ importers:
       '@devagent/adapters':
         specifier: workspace:*
         version: link:../../packages/adapters
+      '@devagent/codex-integration':
+        specifier: workspace:*
+        version: link:../../packages/codex-integration
       '@devagent/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -54,8 +57,20 @@ importers:
         specifier: 1.9.1
         version: 1.9.1
 
+  packages/codex-integration:
+    dependencies:
+      '@devagent/core':
+        specifier: workspace:*
+        version: link:../core
+      '@modelcontextprotocol/client':
+        specifier: 2.2.0
+        version: 2.2.0
+
   packages/core:
     dependencies:
+      smol-toml:
+        specifier: 1.9.1
+        version: 1.9.1
       typescript:
         specifier: 5.9.3
         version: 5.9.3

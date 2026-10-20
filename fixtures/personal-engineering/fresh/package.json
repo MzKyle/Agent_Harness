@@ -1,0 +1,1 @@
+{"name":"intelligence-fixture","private":true,"type":"module","scripts":{"test":"node --test tests/project.test.mjs"},"devDependencies":{"typescript":"5.9.3"}}
