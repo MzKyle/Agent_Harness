@@ -1,0 +1,17 @@
+{
+    "version":  "0.1.0",
+    "dependencies":  {
+                         "zod":  "4.4.3",
+                         "@devagent/adapters":  "workspace:*",
+                         "@devagent/core":  "workspace:*",
+                         "@modelcontextprotocol/server":  "2.2.0"
+                     },
+    "types":  "./dist/index.d.ts",
+    "type":  "module",
+    "name":  "@devagent/diagnostics-mcp",
+    "private":  true,
+    "exports":  "./dist/index.js",
+    "bin":  {
+                "devagent-mcp":  "./dist/main.js"
+            }
+}

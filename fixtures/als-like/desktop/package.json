@@ -1,0 +1,7 @@
+{
+  "name": "als-fixture-desktop",
+  "private": true,
+  "scripts": { "build": "tsc", "test": "vitest run", "typecheck": "tsc --noEmit" },
+  "dependencies": { "react": "19.2.0" },
+  "devDependencies": { "typescript": "5.9.3", "vite": "7.1.0", "vitest": "4.0.0", "electron": "38.0.0" }
+}

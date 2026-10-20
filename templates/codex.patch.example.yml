@@ -1,0 +1,17 @@
+# Optional official DSH Codex provider. NOT selected by generated M1 profiles.
+# Copy to an isolated runtime home and review before passing --patch to DSH.
+# permissionMode never inherits native sandbox configuration; it does NOT force read-only.
+# Configure native Codex sandbox_mode = "read-only" in the isolated account/environment first.
+# Native authentication remains outside this repository. Never put keys here.
+- insert:
+    - id: subagent-codex
+      name: '@deepseek-ai/dsh-subagent-codex'
+      config:
+        providerName: codex
+        permissionMode: never
+    - id: tool-subagent-codex
+      name: '@deepseek-ai/dsh-tool-subagent'
+      config:
+        provider: codex
+        toolName: subagent_codex
+        maxDepth: provider-managed

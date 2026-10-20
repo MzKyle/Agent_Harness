@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": { "composite": false, "noEmit": true, "rootDir": "." },
+  "include": ["evals/**/*.ts", "vitest*.ts"],
+  "references": [{ "path": "packages/core" }, { "path": "packages/adapters" }, { "path": "packages/dsh-bridge" }]
+}

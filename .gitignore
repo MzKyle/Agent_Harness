@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.devagent/
+.env
+.env.*
+!.env.example
+.dsh-local/
+*.log

@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevAgent implementation plan v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "projectId", "requirement", "affectedComponents", "evidence", "steps", "acceptance", "observability", "capabilityGaps", "uncertainties"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "projectId": { "type": "string" },
+    "requirement": { "type": "string", "minLength": 1 },
+    "affectedComponents": { "type": "array", "items": { "type": "string" } },
+    "evidence": { "type": "array", "items": { "type": "object", "required": ["source", "finding"], "properties": { "source": { "type": "string" }, "finding": { "type": "string" } }, "additionalProperties": false } },
+    "steps": { "type": "array", "items": { "type": "object", "required": ["change", "verification", "verificationStatus"], "properties": { "change": { "type": "string" }, "verification": { "type": "string" }, "verificationStatus": { "enum": ["pending", "verified", "unsupported"] } }, "additionalProperties": false } },
+    "acceptance": { "type": "array", "items": { "type": "string" } },
+    "observability": { "type": "object", "required": ["reuse", "additions", "diagnosis", "regression", "sensitiveData", "overhead"], "properties": { "reuse": { "type": "array", "items": { "type": "string" } }, "additions": { "type": "array", "items": { "type": "string" } }, "diagnosis": { "type": "string" }, "regression": { "type": "string" }, "sensitiveData": { "type": "string" }, "overhead": { "type": "string" } }, "additionalProperties": false },
+    "capabilityGaps": { "type": "array", "items": { "type": "object", "required": ["gap", "crossProjectValue", "requiresApproval"], "properties": { "gap": { "type": "string" }, "crossProjectValue": { "type": "boolean" }, "requiresApproval": { "type": "boolean" } }, "additionalProperties": false } },
+    "uncertainties": { "type": "array", "items": { "type": "string" } }
+  }
+}

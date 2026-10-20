@@ -1,0 +1,12 @@
+{
+    "version":  "0.1.0",
+    "name":  "@devagent/adapters",
+    "types":  "./dist/index.d.ts",
+    "exports":  "./dist/index.js",
+    "type":  "module",
+    "dependencies":  {
+                         "@devagent/core":  "workspace:*",
+                         "smol-toml":  "1.9.1"
+                     },
+    "private":  true
+}

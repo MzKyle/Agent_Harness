@@ -1,0 +1,16 @@
+{
+    "version":  "0.1.0",
+    "dependencies":  {
+                         "@devagent/dsh-bridge":  "workspace:*",
+                         "@devagent/adapters":  "workspace:*",
+                         "@devagent/core":  "workspace:*"
+                     },
+    "types":  "./dist/index.d.ts",
+    "type":  "module",
+    "name":  "@devagent/cli",
+    "private":  true,
+    "exports":  "./dist/index.js",
+    "bin":  {
+                "devagent":  "./dist/main.js"
+            }
+}

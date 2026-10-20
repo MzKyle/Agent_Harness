@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "id": "fixture-onboarding-evidence",
+  "scope": "task",
+  "projectId": "project-fixture",
+  "taskId": "m1-onboarding",
+  "title": "Fixture onboarding evidence",
+  "contentRef": "evidence/m1-onboarding.md",
+  "references": [{ "knowledgeId": "project-architecture", "revision": "1" }],
+  "version": { "revision": "1", "repositoryCommit": "0000000000000000000000000000000000000000", "recordedAt": "2026-10-20T00:00:00Z" },
+  "provenance": "tool-evidence"
+}
