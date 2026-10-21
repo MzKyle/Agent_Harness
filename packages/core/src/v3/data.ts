@@ -8,10 +8,10 @@ export const canonical = (value: unknown): string => JSON.stringify(value, (_key
 export const now = () => new Date().toISOString();
 export class IntelligenceData {
   constructor(readonly store: StateStore) {}
-  async signed<T>(file: string, schema: z.ZodType<T>): Promise<T> {
+  async signed<S extends z.ZodType>(file: string, schema: S): Promise<z.output<S>> {
     const envelope = await this.store.get<{ payload: unknown; signature: string }>(file);
     if (!await this.store.verify(canonical(envelope.payload), envelope.signature)) throw new HarnessError('INTELLIGENCE_INTEGRITY_FAILED');
-    return schema.parse(envelope.payload);
+    return schema.parse(envelope.payload) as z.output<S>;
   }
   async writeSigned<T>(file: string, value: T) {
     await this.store.put(file, { payload: value, signature: await this.store.sign(canonical(value)) });
@@ -48,4 +48,23 @@ export class IntelligenceData {
     });
   }
   async hash() { return digest(canonical(await this.read())); }
+  async archiveHistory(before: string, reviewedDigest?: string) {
+    if (!Number.isFinite(Date.parse(before))) throw new HarnessError('ARCHIVE_DATE_DENIED');
+    const data = await this.read();
+    const summaries = Object.values(data.summaries).filter(item => ['succeeded', 'failed', 'blocked', 'cancelled'].includes(item.state) && Date.parse(item.at) < Date.parse(before));
+    const taskIds = new Set(summaries.map(item => item.taskId));
+    const memories = Object.values(data.memories).filter(item => item.type === 'task-summary' && item.confirmation === 'candidate' && item.references.some(ref => ref.kind === 'task' && taskIds.has(ref.ref)));
+    const archive = { schemaVersion: 1, baselineRevision: data.revision, summaries, memories, authority: 'historical-index-only; original execution evidence retained separately' };
+    const hash = digest(canonical(archive));
+    const preview = { archiveDigest: hash, taskIds: [...taskIds], candidateMemoryIds: memories.map(item => item.id), counts: { summaries: summaries.length, memories: memories.length }, auditDeleted: false };
+    if (!reviewedDigest) return { ...preview, status: 'preview' };
+    if (reviewedDigest !== hash) throw new HarnessError('ARCHIVE_REVIEW_STALE');
+    const file = `intelligence-archives/history-${hash}.json`; await this.writeSigned(file, archive);
+    await this.edit(current => {
+      if (current.revision !== data.revision) throw new HarnessError('ARCHIVE_REVIEW_STALE');
+      for (const taskId of taskIds) delete current.summaries[taskId];
+      for (const memory of memories) delete current.memories[memory.id];
+    });
+    return { ...preview, status: 'archived', artifact: file, permissionsRestored: false };
+  }
 }

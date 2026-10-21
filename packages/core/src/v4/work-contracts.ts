@@ -8,14 +8,19 @@ export const snapshotSchema = z.object({ revision: z.string().regex(/^[a-f0-9]{4
 export const lifecycleNames = ['SessionStart', 'UserPromptSubmit', 'PostToolUse', 'Stop', 'SessionEnd', 'Interrupt'] as const;
 export const workEventSchema = z.object({ id: sha, workId, taskId: entityId('task'), projectId, name: z.enum(lifecycleNames),
   source: z.enum(['hook', 'native-event', 'operator']), threadId: z.string().max(120).nullable(), turnId: z.string().max(120).nullable(),
+  executionSessionId: entityId('native-session').optional(),
   tool: z.string().max(120).nullable(), status: z.enum(['observed', 'completed', 'failed', 'interrupted']), at: z.string().datetime(),
   dedupe: z.enum(['exact', 'coarse']), authority: z.literal('observation-only') }).strict();
 export type WorkEvent = z.infer<typeof workEventSchema>;
 export const workSchema = z.object({ schemaVersion: z.literal(4), id: workId, projectId, taskId: entityId('task'), taskIds: z.array(entityId('task')).min(1).max(30),
   goal: z.string().min(1).max(1000), state: z.enum(['started', 'active', 'completed', 'interrupted']),
+  engineeringOutcome: z.enum(['no-change', 'changed', 'tested', 'verified', 'failed', 'blocked', 'incomplete']).default('incomplete'),
+  evidenceStatus: z.enum(['none', 'pending', 'valid', 'stale', 'invalid']).default('none'),
+  lastVerifiedRevision: sha.nullable().default(null),
   mode: z.enum(['external-observation', 'managed-workspace']), workspaceId: entityId('workspace').nullable(), sourceRoot: z.string().max(1000), bindingId: projectId,
   startedAt: z.string().datetime(), updatedAt: z.string().datetime(), checkpointAt: z.string().datetime().nullable(), finalizedAt: z.string().datetime().nullable(),
   before: snapshotSchema, current: snapshotSchema, threadIds: z.array(z.string().max(120)).max(30), turnIds: z.array(z.string().max(120)).max(100),
+  sourceBaseline: snapshotSchema.nullable().default(null),
   eventIds: z.array(sha).max(500), leaseId: entityId('lease'), candidateIds: z.array(entityId('memory')).max(100),
   decisions: z.array(z.string().max(1000)).max(20), outstanding: z.array(z.string().max(1000)).max(20),
   outcome: z.object({ changed: z.array(observedPath).max(1000), tested: z.array(z.string().max(100)).max(20), verified: z.array(z.string().max(100)).max(20),

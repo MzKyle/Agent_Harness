@@ -10,15 +10,18 @@ import { WorkspaceManager } from '../v2/workspace.js';
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_.:-]{1,100}$/);
 const state = z.enum(['queued', 'running', 'completed', 'failed', 'cancelled', 'waiting_cvat', 'waiting_user', 'skipped']);
-const observation = z.object({ workflowId: identifier, state, step: identifier, updatedAt: z.string().datetime() }).strict();
+const observation = z.object({ workflowId: identifier, state, step: identifier, updatedAt: z.string().datetime().nullable().optional(), observedAt: z.string().datetime().optional(), source: identifier.optional(), clockDomain: identifier.optional() }).strict();
 const eventSchema = z.object({ at: z.string().datetime(), workflowId: identifier, traceId: identifier, component: z.enum(['api', 'worker', 'store', 'ui']), event: identifier,
   from: state.optional(), to: state.optional(), severity: z.enum(['info', 'error', 'warning']), message: z.string().max(500) }).strict();
 export const runtimeSnapshotSchema = z.object({ schemaVersion: z.literal(1), adapter: z.string().regex(/^[a-z0-9-]{1,60}$/), capturedAt: z.string().datetime(),
   serviceVersion: z.string().max(80), timeoutMs: z.number().int().min(1).max(3600000),
+  clock: z.object({ domain: identifier, trusted: z.boolean(), maxSkewMs: z.number().int().min(0).max(60000) }).strict().optional(),
+  consistencyPolicy: z.object({ propagationDelayMs: z.number().int().min(0).max(3600000), persistentAfterMs: z.number().int().min(1).max(3600000), observationMaxAgeMs: z.number().int().min(1).max(3600000) }).strict().optional(),
+  mismatchWindows: z.array(z.object({ workflowId: identifier, firstObservedAt: z.string().datetime(), lastObservedAt: z.string().datetime(), samples: z.number().int().min(2).max(10000) }).strict()).max(100).optional(),
   api: z.array(observation).max(100), worker: z.array(observation).max(100), sqlite: z.array(observation).max(100), ui: z.array(observation).max(100), events: z.array(eventSchema).max(500) }).strict();
 export type RuntimeSnapshot = z.infer<typeof runtimeSnapshotSchema>;
 export interface RuntimeObservationAdapter { id: string; description: string; sourcePaths: string[]; transitions: Record<string, string[]> }
-const finding = z.object({ workflowId: identifier, code: z.enum(['state-mismatch', 'stalled', 'illegal-transition', 'worker-error']), detail: z.string().max(1000), traceIds: z.array(identifier).max(100) }).strict();
+const finding = z.object({ workflowId: identifier, code: z.enum(['state-mismatch', 'stalled', 'transient-inconsistency', 'persistent-mismatch', 'stale-observation', 'illegal-transition', 'worker-error', 'insufficient-evidence']), detail: z.string().max(1000), traceIds: z.array(identifier).max(100) }).strict();
 const recordSchema = z.object({ id: entityId('runtime'), projectId, taskId: entityId('task'), workspaceId: entityId('workspace'), workspaceRevision: sha,
   evidenceId: entityId('execution'), capturedAt: z.string().datetime(), importedAt: z.string().datetime(), adapter: z.string().max(60), serviceVersion: z.string().max(80),
   findings: z.array(finding).max(500), snapshot: runtimeSnapshotSchema, provenance: z.literal('signed-isolated-command-output'), authority: z.literal('diagnostic-only') }).strict();
@@ -29,8 +32,26 @@ export function analyzeRuntime(snapshot: RuntimeSnapshot, adapter: RuntimeObserv
   for (const id of new Set([...snapshot.api, ...snapshot.worker, ...snapshot.sqlite, ...snapshot.ui].map(item => item.workflowId))) {
     const events = snapshot.events.filter(item => item.workflowId === id); const traceIds = [...new Set(events.map(item => item.traceId))].slice(0, 100);
     const observations = (['api', 'worker', 'sqlite', 'ui'] as const).flatMap(layer => snapshot[layer].filter(item => item.workflowId === id).map(item => ({ layer, ...item })));
-    if (new Set(observations.map(item => item.state)).size > 1) findings.push({ workflowId: id, code: 'state-mismatch', detail: observations.map(item => `${item.layer}=${item.state}`).join('; '), traceIds });
-    for (const item of observations) if (item.state === 'running' && captured - Date.parse(item.updatedAt) > snapshot.timeoutMs) findings.push({ workflowId: id, code: 'stalled', detail: `${item.layer} at ${item.step}: last heartbeat exceeded configured ${snapshot.timeoutMs}ms`, traceIds });
+    const add = (code: z.infer<typeof finding>['code'], detail: string) => findings.push({ workflowId: id, code, detail, traceIds });
+    const clock = snapshot.clock; const policy = snapshot.consistencyPolicy;
+    const reliable = Boolean(clock?.trusted && policy && observations.length >= 2 && observations.every(item => item.updatedAt && item.observedAt && item.source && item.clockDomain === clock.domain
+      && Date.parse(item.updatedAt) <= Date.parse(item.observedAt) + clock.maxSkewMs && Date.parse(item.observedAt) <= captured + clock.maxSkewMs));
+    const stale = reliable && observations.some(item => captured - Date.parse(item.observedAt!) > policy!.observationMaxAgeMs);
+    const different = new Set(observations.map(item => item.state)).size > 1;
+    if (!reliable) add('insufficient-evidence', 'Reliable common clock, observation/update timestamps, sources and propagation policy are required; divergence alone is not a bug');
+    else if (stale) add('stale-observation', 'At least one component observation exceeds the explicit maximum age; refresh before comparing state');
+    else if (different) {
+      const window = snapshot.mismatchWindows?.find(item => item.workflowId === id);
+      const first = window ? Date.parse(window.firstObservedAt) : NaN; const last = window ? Date.parse(window.lastObservedAt) : NaN;
+      const persistent = window && first <= last && last <= captured + clock!.maxSkewMs && captured - last <= policy!.observationMaxAgeMs && last - first >= Math.max(policy!.propagationDelayMs, policy!.persistentAfterMs);
+      if (persistent) { add('persistent-mismatch', `Repeated divergence beyond propagation allowance; ${observations.map(item => `${item.layer}=${item.state}`).join('; ')}; sampled persistence, not a proven cause`); add('state-mismatch', 'Compatibility alias for persistent-mismatch; does not imply all components must agree instantaneously'); }
+      else if (observations.some(item => captured - Date.parse(item.updatedAt!) <= policy!.propagationDelayMs)) add('transient-inconsistency', 'State divergence is within the allowed propagation window; collect a later sample');
+      else add('insufficient-evidence', 'Divergence has no valid repeated observation window; persistent failure cannot be inferred');
+    }
+    if (reliable && !stale) for (const item of observations) if (item.state === 'running' && captured - Date.parse(item.updatedAt!) > snapshot.timeoutMs) {
+      add('stale-observation', `${item.layer} heartbeat exceeded configured ${snapshot.timeoutMs}ms; investigate rather than infer a cause`);
+      add('stalled', `${item.layer} at ${item.step}: heartbeat timeout compatibility signal`);
+    }
     for (const event of events) {
       if (event.from && event.to && !adapter.transitions[event.from]?.includes(event.to)) findings.push({ workflowId: id, code: 'illegal-transition', detail: `${event.component}: ${event.from} -> ${event.to}; observed event, not a proven root cause`, traceIds });
       if (event.component === 'worker' && event.severity === 'error') findings.push({ workflowId: id, code: 'worker-error', detail: `${event.event} at ${event.at}: ${event.message}`, traceIds });
@@ -84,7 +105,10 @@ export class RuntimeDiagnostics {
     const workflowIds = new Set(events.map(event => event.workflowId));
     const selected = (workflowId: string) => (!filters.workflowId || workflowId === filters.workflowId) && (!filters.traceId || workflowIds.has(workflowId));
     const snapshot = { ...record.snapshot, events, api: record.snapshot.api.filter(item => selected(item.workflowId)), worker: record.snapshot.worker.filter(item => selected(item.workflowId)), sqlite: record.snapshot.sqlite.filter(item => selected(item.workflowId)), ui: record.snapshot.ui.filter(item => selected(item.workflowId)) };
-    return { status: 'available' as const, ...record, snapshot, findings: record.findings.filter(item => selected(item.workflowId)), stale: revision !== record.workspaceRevision || Date.now() - Date.parse(record.capturedAt) > 86400000, currentWorkspaceRevision: revision,
-      limitation: 'Point-in-time fixture observation; no live ALS process/database access or proven root cause', sourceCandidates: this.adapters.find(item => item.id === record.adapter)?.sourcePaths ?? [] };
+    // Recompute the current view without rewriting the signed historical interpretation.
+    const adapter = this.adapters.find(item => item.id === record.adapter);
+    const findings = adapter ? analyzeRuntime(snapshot, adapter) : record.findings.filter(item => selected(item.workflowId));
+    return { status: 'available' as const, ...record, snapshot, findings, analysisVersion: adapter ? '0.4.1' : 'stored-unreclassified', stale: revision !== record.workspaceRevision || Date.now() - Date.parse(record.capturedAt) > 86400000, currentWorkspaceRevision: revision,
+      limitation: 'Point-in-time fixture observation; no live ALS process/database access or proven root cause', sourceCandidates: adapter?.sourcePaths ?? [] };
   }
 }

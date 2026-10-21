@@ -1,0 +1,43 @@
+import { afterEach, expect, it } from 'vitest';
+import { intelligenceFixture } from '../personal-engineering/helpers.js';
+import { CodexNativeIntegration, installWorkHooks, workHookConfiguration, bindWorkHookExecution, resolveWorkHookExecution } from '../../packages/codex-integration/src/index.js';
+const cleanups: (() => Promise<void>)[] = [];
+afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
+it('keeps trusted context provisioning distinct from model patches while binding verification to its content', async () => {
+  const f = await intelligenceFixture(); cleanups.push(f.cleanup); const s = f.system;
+  const workspace = await s.workspaces.create(f.record.id); const before = await s.workspaces.workingRevision(workspace.id);
+  const native = new CodexNativeIntegration(s.store, s.registry, s.identities, s.workspaces, s.tasks); const attachment = await native.attach(f.record.id, { workspaceId: workspace.id });
+  expect(attachment.skillPath).toContain('devagent-native-bridge'); expect(await s.workspaces.workingRevision(workspace.id)).not.toBe(before);
+  const diff = await s.workspaces.diff(workspace.id); expect(diff.changedFiles).toEqual([]); expect(diff.unifiedDiff).toBe(''); expect(diff.harnessProvisionedContext).toContain('.agents/skills/devagent-native-bridge/SKILL.md');
+  await s.workspaces.write(workspace.id, 'src/service.ts', 'export const actualCodeChange = true;\n'); expect((await s.workspaces.diff(workspace.id)).changedFiles).toContain('src/service.ts');
+  await expect(s.workspaces.markProvisionedContext(workspace.id, 'src/service.ts', '0'.repeat(64))).rejects.toThrow('MANAGED_CONTEXT_FILE_DENIED');
+});
+it('rejects a forged provisioning manifest rather than hiding a source change', async () => {
+  const f = await intelligenceFixture(); cleanups.push(f.cleanup); const s = f.system;
+  const native = new CodexNativeIntegration(s.store, s.registry, s.identities, s.workspaces, s.tasks); const attachment = await native.attach(f.record.id);
+  const file = `managed-context/${attachment.workspaceId}.json`; const manifest = await s.store.get<{ files: Record<string, string> }>(file); manifest.files['src/service.ts'] = '0'.repeat(64); await s.store.put(file, manifest);
+  await expect(s.workspaces.diff(attachment.workspaceId)).rejects.toThrow('MANAGED_CONTEXT_INTEGRITY_FAILED');
+  const attachmentFile = `runtime/codex-native/${attachment.id}.json`; const tampered = await s.store.get<Record<string, unknown>>(attachmentFile); delete tampered.authHome; await s.store.put(attachmentFile, tampered);
+  await expect(native.get(attachment.id)).rejects.toThrow('CODEX_ATTACHMENT_INTEGRITY_FAILED');
+});
+it('binds stable hook definitions to the exact execution and rejects late callbacks after rebinding', async () => {
+  const f = await intelligenceFixture(); cleanups.push(f.cleanup); const s = f.system;
+  const native = new CodexNativeIntegration(s.store, s.registry, s.identities, s.workspaces, s.tasks); const attachment = await native.attach(f.record.id);
+  const work = await s.work.start(f.record.id, 'Explicit hook execution binding', { taskId: attachment.taskId, workspaceId: attachment.workspaceId });
+  await installWorkHooks(native, s.work, attachment.id, work.id, true);
+  const definitions = await workHookConfiguration(native, attachment.id, work.id);
+  const first = await native.executionConfiguration(attachment.id, work.taskId, ['get_work_status']);
+  await bindWorkHookExecution(native, s.work, attachment.id, work.id, first.sessionId);
+  expect((await resolveWorkHookExecution(native, attachment.id, first.sessionId)).taskId).toBe(work.taskId);
+  await expect(resolveWorkHookExecution(native, attachment.id, undefined)).rejects.toThrow('HOOK_EXECUTION_BINDING_REQUIRED');
+  const second = await native.executionConfiguration(attachment.id, work.taskId, ['get_work_status']);
+  await installWorkHooks(native, s.work, attachment.id, work.id, true);
+  expect(await workHookConfiguration(native, attachment.id, work.id)).toEqual(definitions);
+  await bindWorkHookExecution(native, s.work, attachment.id, work.id, second.sessionId);
+  await expect(resolveWorkHookExecution(native, attachment.id, first.sessionId)).rejects.toThrow('HOOK_EXECUTION_SCOPE_DENIED');
+  expect((await resolveWorkHookExecution(native, attachment.id, second.sessionId)).executionSessionId).toBe(second.sessionId);
+  await s.work.event(work.id, (await s.work.get(work.id)).leaseId, { hook_event_name: 'SessionStart', harness_execution_session_id: second.sessionId }, 'hook');
+  expect((await s.work.events(work.id))[0]!.executionSessionId).toBe(second.sessionId);
+  const file = `runtime/hook-runs/${attachment.id}.json`; const forged = await s.store.get<Record<string, unknown>>(file); forged.taskId = 'task-foreign'; await s.store.put(file, forged);
+  await expect(resolveWorkHookExecution(native, attachment.id, second.sessionId)).rejects.toThrow('HOOK_EXECUTION_SCOPE_DENIED');
+});

@@ -15,3 +15,17 @@ test('independent real HTTP/worker/SQLite failure and timeout regression', async
     assert.equal(snapshot.events.filter(item => item.severity === 'error').length, 2);
   } finally { await runtime.close(); }
 });
+
+test('independent delayed propagation stays transient and eventually converges', async () => {
+  const runtime = await startRuntime({ propagationDelayMs: 150 });
+  try {
+    await fetch(`${runtime.url}/run/healthy`, { method: 'POST' });
+    const immediate = await (await fetch(`${runtime.url}/snapshot`)).json();
+    assert.equal(immediate.worker[0].state, 'completed');
+    assert.equal(immediate.sqlite[0].state, 'running', 'Configured propagation delay must remain observable');
+    await new Promise(resolve => globalThis.setTimeout(resolve, 220));
+    const later = await (await fetch(`${runtime.url}/snapshot`)).json();
+    assert.equal(later.sqlite[0].state, 'completed');
+    assert.equal(later.worker[0].state, later.sqlite[0].state);
+  } finally { await runtime.close(); }
+});

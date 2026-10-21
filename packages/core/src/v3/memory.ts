@@ -18,6 +18,7 @@ export function relevance(query: string, value: string) {
   return tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0) + (normalized && haystack.includes(normalized) ? 5 : 0);
 }
 export class EngineeringMemory {
+  onDeleted?: (id: string) => Promise<void>;
   constructor(readonly data: IntelligenceData, readonly identities: ProjectIdentities) {}
   private async normalized(input: unknown) {
     const parsed = memoryInputSchema.parse(input);
@@ -69,7 +70,8 @@ export class EngineeringMemory {
     });
   }
   async delete(id: string) {
-    return this.data.edit(data => { if (!data.memories[id]) throw new HarnessError('MEMORY_NOT_FOUND'); delete data.memories[id]; return { id, deleted: true, historyDeleted: true }; });
+    const result = await this.data.edit(data => { if (!data.memories[id]) throw new HarnessError('MEMORY_NOT_FOUND'); delete data.memories[id]; return { id, deleted: true, historyDeleted: true }; });
+    await this.onDeleted?.(id); return { ...result, auditScope: 'Work decisions, execution evidence, independent exports and backups require separate review/deletion' };
   }
   async search(options: { domain?: MemoryRecord['domain']; projectId?: string; query?: string; types?: MemoryRecord['type'][]; includeCandidates?: boolean; includeDeprecated?: boolean; limit?: number }) {
     const owner = options.projectId ? (await this.identities.resolve(options.projectId)).stableProjectId : null;

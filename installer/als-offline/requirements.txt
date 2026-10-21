@@ -1,0 +1,7 @@
+# Environment preparation only; not the complete ALS training/application dependency set.
+pytest==8.4.1
+pydantic==2.11.7
+PyYAML==6.0.3
+numpy==2.2.6
+fastapi==0.141.1
+httpx2==2.12.0

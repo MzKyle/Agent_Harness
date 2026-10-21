@@ -5,10 +5,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createStore } from './store.ts';
 
-export async function startRuntime() {
+export async function startRuntime(options = {}) {
   const directory = await mkdtemp(path.join(tmpdir(), 'als-runtime-'));
   const store = createStore(path.join(directory, 'workflow.sqlite'));
-  const events = []; const workers = new Set(); const observed = new Map(); let sequence = 0;
+  const events = []; const workers = new Set(); const observed = new Map(); const mismatchStarts = new Map(); let sequence = 0;
   const log = (workflowId, component, event, severity, message, from, to) => events.push({ at: new Date().toISOString(), workflowId, traceId: `trace-${workflowId}`, component, event, severity, message, ...(from ? { from } : {}), ...(to ? { to } : {}) });
   async function run(scenario) {
     const id = `workflow-${++sequence}`; store.create(id);
@@ -24,8 +24,12 @@ export async function startRuntime() {
         observed.set(id, { workflowId: id, state, step: 'handler', updatedAt: new Date().toISOString() });
         log(id, 'worker', event, state === 'failed' ? 'error' : 'info', message, 'running', state);
         // Intentional defect: the terminal error path only updates worker memory.
-        if (state === 'completed') store.update(id, state, 'seal_result');
-        void worker.terminate().then(() => { workers.delete(worker); resolve(); });
+        if (state === 'completed') {
+          if (options.propagationDelayMs) setTimeout(() => store.update(id, state, 'seal_result'), options.propagationDelayMs);
+          else store.update(id, state, 'seal_result');
+        }
+        if (store.read(id).state !== state) mismatchStarts.set(id, new Date().toISOString());
+        void worker.terminate().then(() => { workers.delete(worker); setTimeout(resolve, 40); });
       };
       const timer = setTimeout(() => finish('failed', 'handler_timeout', 'Synthetic handler timeout'), 350);
       worker.once('message', () => finish('completed', 'handler_completed', 'Synthetic output sealed'));
@@ -35,8 +39,12 @@ export async function startRuntime() {
   }
   function snapshot() {
     const ids = [...observed.keys()]; const sqlite = ids.map(id => store.read(id));
-    return { schemaVersion: 1, adapter: 'als-workflow-v1', capturedAt: new Date().toISOString(), serviceVersion: 'fixture-0.4', timeoutMs: 300,
-      api: sqlite.map(item => ({ ...item })), sqlite, worker: ids.map(id => observed.get(id)), ui: sqlite.map(item => ({ ...item })), events: [...events] };
+    const capturedAt = new Date().toISOString();
+    const sample = (item, source) => ({ ...item, observedAt: capturedAt, source, clockDomain: 'fixture-host-clock' });
+    return { schemaVersion: 1, adapter: 'als-workflow-v1', capturedAt, serviceVersion: 'fixture-0.4.1', timeoutMs: 300,
+      clock: { domain: 'fixture-host-clock', trusted: true, maxSkewMs: 5 }, consistencyPolicy: { propagationDelayMs: options.propagationDelayMs ?? 20, persistentAfterMs: options.propagationDelayMs ? options.propagationDelayMs + 50 : 30, observationMaxAgeMs: 1000 },
+      mismatchWindows: ids.filter(id => mismatchStarts.has(id) && store.read(id).state !== observed.get(id).state).map(id => ({ workflowId: id, firstObservedAt: mismatchStarts.get(id), lastObservedAt: capturedAt, samples: 2 })),
+      api: sqlite.map(item => sample(item, 'api')), sqlite: sqlite.map(item => sample(item, 'store')), worker: ids.map(id => sample(observed.get(id), 'worker')), ui: sqlite.map(item => sample(item, 'ui')), events: [...events] };
   }
   const server = createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json');

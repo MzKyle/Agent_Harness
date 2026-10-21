@@ -3,7 +3,7 @@ import { readFile, lstat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { engineeringSystem } from '@devagent/adapters';
-import { HarnessError, configureIsolation, isolationCheck, fingerprint, projectRules, approvedCommandSchema, staticPlan } from '@devagent/core';
+import { HarnessError, configureIsolation, isolationCheck, fingerprint, projectRules, approvedCommandSchema, staticPlan, engineeringHealth } from '@devagent/core';
 import { harnessRoot, FunctionalDshDriver, IsolatedCodex } from '@devagent/dsh-bridge';
 import { doctor } from './doctor.js';
 
@@ -15,7 +15,7 @@ export async function functionalMain(argv: string[]) {
     executable: { type: 'string' }, 'args-file': { type: 'string' }, args: { type: 'string' }, cwd: { type: 'string' }, timeout: { type: 'string' },
     prompt: { type: 'string' }, mode: { type: 'string' }, codex: { type: 'boolean' }, image: { type: 'string' }, suite: { type: 'string' },
     trace: { type: 'string' }, severity: { type: 'string' }, from: { type: 'string' }, to: { type: 'string' }, 'operation-id': { type: 'string' },
-    'als-path': { type: 'string' }, 'pollen-path': { type: 'string' }, online: { type: 'boolean' },
+    'als-path': { type: 'string' }, 'pollen-path': { type: 'string' }, online: { type: 'boolean' }, apply: { type: 'boolean' },
   } });
   const home = path.resolve(v.home ?? path.join(harnessRoot, '.devagent-state'));
   const system = await engineeringSystem(home); const [command, operation] = p;
@@ -25,7 +25,7 @@ export async function functionalMain(argv: string[]) {
   const workspace = () => required(v.workspace ?? v.id, 'workspace');
   const task = () => required(v.task ?? v.id, 'task');
   try {
-    if (command === 'doctor') { const base = await doctor(); const isolation = await isolationCheck(system.store); result = { ...base, status: isolation.verified ? base.status : 'attention', isolation }; }
+    if (command === 'doctor') { const base = await doctor(); const isolation = await isolationCheck(system.store); const engineering = await engineeringHealth(system.intelligence); result = { ...base, status: isolation.verified && engineering.status === 'ok' ? base.status : 'attention', isolation, engineering }; }
     else if (command === 'project') {
       if (operation === 'add') {
         if (!v['read-only']) throw new HarnessError('READ_ONLY_GRANT_REQUIRED');
@@ -79,6 +79,7 @@ export async function functionalMain(argv: string[]) {
       if (operation === 'get') result = await system.execution.evidence.get(required(v.id, 'id'));
       else if (operation === 'list') result = await system.execution.evidence.list(v.task);
       else if (operation === 'export') result = await system.execution.evidence.report(task());
+      else if (operation === 'archive') result = await system.execution.evidence.archive(task(), Boolean(v.apply));
       else throw new HarnessError('UNKNOWN_EVIDENCE_OPERATION');
     } else if (command === 'diagnostics') {
       if (operation === 'import') {

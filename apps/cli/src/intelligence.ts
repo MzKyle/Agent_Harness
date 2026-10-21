@@ -4,13 +4,14 @@ import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { engineeringSystem } from '@devagent/adapters';
 import { HarnessError, explicitRoot, readBounded, memoryInputSchema, type MemoryInput } from '@devagent/core';
-import { CodexNativeIntegration, probeHarnessMcp, runNativeWork, installWorkHooks } from '@devagent/codex-integration';
+import { CodexNativeIntegration, probeHarnessMcp, runNativeWork, installWorkHooks, useCodex, dailyMode, dailyStatus, hookAction } from '@devagent/codex-integration';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 export function intelligenceCommand(args: string[]) {
   return ['profile', 'memory', 'onboard', 'context', 'capability', 'backup'].includes(args[0] ?? '') ||
     args[0] === 'project' && ['identity', 'profile', 'refresh', 'relink'].includes(args[1] ?? '') ||
-    args[0] === 'codex' && ['attach', 'inspect', 'session', 'login-native', 'run', 'hooks'].includes(args[1] ?? '') ||
+    args[0] === 'codex' && ['attach', 'inspect', 'session', 'login-native', 'run', 'hooks', 'use', 'recover'].includes(args[1] ?? '') ||
+    args[0] === 'codex' && args[1] === 'status' && args.some(value => value === '--project' || value.startsWith('--project=')) ||
     args[0] === 'eval' && args.includes('personal-engineering');
 }
 async function readJson(input: string) {
@@ -27,6 +28,7 @@ export async function intelligenceMain(args: string[]) {
     probe: { type: 'boolean' }, command: { type: 'string' }, evidence: { type: 'string' }, budget: { type: 'string' },
     'passphrase-env': { type: 'string' }, review: { type: 'string' }, suite: { type: 'string' }, image: { type: 'string' },
     'als-path': { type: 'string' }, 'pollen-path': { type: 'string' }, online: { type: 'boolean' }, method: { type: 'string' }, goal: { type: 'string' }, coding: { type: 'boolean' }, work: { type: 'string' }, 'auth-from': { type: 'string' },
+    mode: { type: 'string' }, action: { type: 'string' }, client: { type: 'string' }, hooks: { type: 'boolean' }, before: { type: 'string' },
   } });
   const system = await engineeringSystem(path.resolve(v.home ?? path.join(root, '.devagent-state')));
   const native = new CodexNativeIntegration(system.store, system.registry, system.identities, system.workspaces, system.tasks);
@@ -38,7 +40,8 @@ export async function intelligenceMain(args: string[]) {
   const [command, operation] = p; let result: unknown;
   try {
     if (command === 'profile' || command === 'memory') {
-      if (['set', 'propose'].includes(operation ?? '')) {
+      if (command === 'memory' && operation === 'archive-history') result = await system.intelligence.archiveHistory(required(v.before, 'before'), v.digest);
+      else if (['set', 'propose'].includes(operation ?? '')) {
         const input = v.file ? await readJson(v.file) : { domain: command === 'profile' ? 'developer' : v.domain ?? (v.project ? 'project' : 'knowledge'), ...(v.project ? { projectId: v.project } : {}), type: v.type ?? (command === 'profile' ? 'engineering-preference' : 'knowledge'), topic: required(v.topic, 'topic'), content: required(v.content, 'content') };
         const parsed = memoryInputSchema.parse(input);
         if (command === 'profile' && parsed.domain !== 'developer') throw new HarnessError('PROFILE_SCOPE_DENIED');
@@ -82,7 +85,7 @@ export async function intelligenceMain(args: string[]) {
       else throw new HarnessError('UNKNOWN_ONBOARDING_OPERATION');
     } else if (command === 'context') {
       if (operation !== 'show') throw new HarnessError('UNKNOWN_CONTEXT_OPERATION');
-      result = await system.context.brief(project(), v.task ?? v.query ?? '', Number(v.budget ?? 6000));
+      result = await system.context.brief(project(), v.task ?? v.query ?? '', Number(v.budget ?? 3600));
     } else if (command === 'capability') {
       if (operation === 'inspect') result = v.probe ? await system.capabilities.assess(project(), true) : await system.capabilities.get(project());
       else if (operation === 'proposals') result = await system.evolution.list(project());
@@ -102,8 +105,15 @@ export async function intelligenceMain(args: string[]) {
       if (operation === 'attach') result = await native.attach(project(), { ...(v.workspace ? { workspaceId: v.workspace } : {}), ...(v['auth-from'] ? { authFrom: v['auth-from'] } : {}), includePreferences: Boolean(v['include-preferences']) });
       else if (operation === 'inspect') result = await native.inspect(id());
       else if (operation === 'session') result = await native.session(id());
-      else if (operation === 'run') result = await runNativeWork(native, system.work, v.id ?? (await native.latest(project())).id, required(v.goal, 'goal'), { coding: Boolean(v.coding), ...(v.work ? { workId: v.work } : {}) });
-      else if (operation === 'hooks') result = await installWorkHooks(native, system.work, id(), required(v.work, 'work'));
+      else if (operation === 'use') result = await useCodex(native, system.work, project(), { ...(v.mode ? { mode: v.mode } : {}), ...(v['auth-from'] ? { authFrom: v['auth-from'] } : {}), includePreferences: Boolean(v['include-preferences']) });
+      else if (operation === 'status') result = await dailyStatus(native, system.work, project());
+      else if (operation === 'recover') result = await native.recoverAuthentication(id());
+      else if (operation === 'run') {
+        const attachment = v.id ? await native.get(v.id) : await native.latest(project());
+        const selected = v.mode ? (await import('@devagent/core')).selectEngineeringMode(v.mode).requested : await dailyMode(native, attachment.projectId);
+        result = await runNativeWork(native, system.work, attachment.id, required(v.goal, 'goal'), { coding: Boolean(v.coding), mode: selected as 'auto' | 'fast' | 'engineering' | 'deep', hooks: Boolean(v.hooks), ...(v.work ? { workId: v.work } : {}) });
+      }
+      else if (operation === 'hooks') result = v.action ? await hookAction(native, system.work, id(), v.action, v.work, v.client) : await installWorkHooks(native, system.work, id(), required(v.work, 'work'));
       else if (operation === 'login-native') {
         if (v.method && !['device', 'browser'].includes(v.method)) throw new HarnessError('CODEX_LOGIN_METHOD_DENIED');
         result = await native.login(id(), v.method === 'browser' ? 'browser' : 'device');

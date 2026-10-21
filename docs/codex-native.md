@@ -1,54 +1,35 @@
-# Codex 原生接入与验收边界
+# 原生 Codex 接入（V0.4.1）
 
-目标：新会话通过官方 MCP + 可复用 Skill 获取相关上下文，不依赖 DSH。实现位于 packages/codex-integration，复用已有 MCP SDK；不会实现模型请求客户端或 Agent Loop。
+使用官方 CLI 0.157.1、app-server 与标准 MCP/Skill，不实现第二套模型循环。
+认证配置边界见 [配置隔离](configuration-isolation.md)，Windows 日常命令见 [使用指南](daily-engineering.md)。
 
-## 接入方式
+```powershell
+$cli = 'E:\Agent_Harness\apps\cli\dist\main.js'
+node $cli codex attach --project <approved-fixture> --home <state>
+node $cli codex login-native --id <attachment> --method browser --home <state>
+node $cli codex inspect --id <attachment> --home <state>
+node $cli codex use --project <project> --mode auto --home <state>
+node $cli codex run --project <fixture> --goal '完成当前任务' --coding --mode auto --home <state>
+```
 
-codex attach --project <id> 创建过滤 committed Workspace、Harness analysis Task、独立 HOME/CODEX_HOME 和 config.toml。默认没有认证、没有个人偏好分享，不改全局配置。标准 [Codex MCP 配置](https://learn.chatgpt.com/docs/extend/mcp?surface=cli) 使用 mcp_servers.devagent 的 command/args/enabled_tools，绑定项目与 Task；只有明确 fixture-only 分享才 enabled。已有 .codex/config.toml 在 Onboarding 中复用，不自动覆盖；机器路径不写入便携备份。
+首次登录由用户完成；密码/Token 不进入报告。--auth-from 只显式引用同 state 的授权 fixture 认证
+上下文，不复制宿主凭据。项目选择、在线源码分享、个人偏好分享是独立授权。
+附件配置 HOME 与认证 HOME 分开，新附件签名并检查项目/Workspace/cwd。每次执行签名记录
+Project/Task/配置 Hash，完整覆盖 MCP/Skill/工具与权限；exec 使用 --ignore-user-config、--ignore-rules、
+--ephemeral、history none。共享认证配置不允许静默变化，设备迁移不恢复认证或批准。
 
-工程 Skill 名为 devagent-project-engineering，存于 skills/ 和独立 Codex HOME 的原生 Skill 位置。它要求重要任务按需读取 brief、当前证据和批准验证，简单修改不机械调用全部工具；候选需审查，不能自行批准命令或写原项目。使用官方 [Skills 机制](https://developers.openai.com/plugins/concepts/skills) 的原生发现器，没有自制 Skill loader。
+inspect 真查询 initialize、skills/list、mcpServerStatus/list、account/read、model/list，仅存安全元数据，
+不保存账号正文或 stderr，不发模型请求。session/run 使用官方 Exec JSON、签名回执、独立答案或
+容器 Grader 验证；发现工具不等于模型使用。不同附件工具配置和模型运行分别绑定 Task。
 
-inspect 真实启动 codex app-server --stdio，经 initialize、skills/list、mcpServerStatus/list、account/read 检查发现和认证。只保存版本、名称、工具清单和认证布尔状态，不保存账号详情或 stderr。发现检查没有 thread/turn/model 请求。RPC 对交互请求返回拒绝，退出时只清理本次自有进程树。
+Fast 不强制 Skill/brief；Engineering/Deep 按需加载。没有审批、恢复、采纳或原源写入 MCP 工具。
+附件自己的公开 Skill 由工作区 `.agents/skills/devagent-native-bridge/SKILL.md` 官方发现，
+配置按完整文件路径禁用共享旧 Skill，inspect 核对实际启用路径；不是只检查 TOML 声明。
+服务端再次检查分享、scope、Plan、命令和隔离；模式不能扩权。Host read-only 不是完整宿主读取
+隔离，因此真实 ALS/Pollen 本轮 local-only，不能因为已认证就分享业务源码。
 
-login-native --id 使用该附件自己的官方设备认证；`--method browser` 使用官方本机浏览器和 localhost 回调。
-本轮由用户完成 browser 授权。设备码流程若未进入输入页面，不应把普通 ChatGPT 登录误判为 Codex 授权。
-用户在官方流程操作；不复制主机 auth.json、不扫描磁盘、不从聊天获取密钥。
-`attach --auth-from <explicit-managed-attachment>` 可引用同一 state 中已有 fixture 认证环境，
-没有复制凭据；命令和项目/Task 绑定仍由当前 run 独立指定。
-
-## 工具与数据作用域
-
-context session 配置仅暴露画像/相关偏好/近期任务/能力、规则、源码、诊断等读取工具。
-`codex run --coding` 在当前 Task 增加结构化 Plan、Workspace 编辑、批准命令与 gap/候选进展。
-个人上下文需 attach --include-preferences；本地 CLI 不等于在线分享授权。即使客户端改配置，
-服务端仍核对项目/Task、fixture 分享、Plan、批准和预算。审批、恢复、采纳、规范 apply 永远不暴露。
-
-只读的 get_context_brief 优先安全、真实当前项目事实、约束/目标、近期工作，最后相关偏好；预算1024–16000字符。候选偏好、别的项目私有记忆不混入。引用过时明确标记，普通外部 Codex 历史不会被猜测或自动采集。
-
-## 真正模型验收
-
-session --id 先真实发现/认证检查。没有 auth 或 fixture 分享立即保存 blocked Task/report/history，模型调用0。认证后才运行官方 codex exec，显式调用 $devagent-project-engineering，要求使用 get_context_brief、get_recent_work 和具体源码查询。
-
-验收检查同时要求：
-
-- 原生 turn.completed 与成功退出。
-- 项目/Task 匹配且 HMAC 有效的服务端 MCP 完成回执。
-- 最终 JSON 的 projectId、当前 revision、实际返回源码路径准确。
-- 禁止硬件/生产/源写入，以及最近工作状态与真实工具回执相符。
-
-叙述“调用过工具”不算通过；oracle 单元测试覆盖假 revision、假路径、遗漏约束和错误状态。
-只保存官方事件元数据及 usage，答案在内存检查，不保存完整 transcript。原项目提交和 Workspace
-基线提交不同，当前源码切片还附带独立工作内容 Hash，不能把两种提交误判为回答错误。
-CLI 不暴露精确后端模型请求次数，报告中 completed turns/modelCalls 仅是明确标注的下界；不是账单。
-
-## 当前结果与限制
-
-本机原生 CLI 0.157.1：fresh app-server、工程 Skill 和读取工具发现通过。独立 HOME 已通过用户官方授权。
-真实模型上下文 oracle、自主修复、独立测试、新会话复验与合成偏好利用已通过；证据见
-[V0.4 验收](verification.md)。没有复制宿主账户。真实 ALS/Pollen 从未发送模型，DSH 继续暂缓。
-
-SDK stdio probe 是协议验收，独立于真实模型验收。Skill 生成/发现/显式指令/模型实际使用/自动触发分开记录；
-自动触发尚未证明。原生 Hooks 配置尚无实际回调；详见 [Hooks 降级](codex-hooks-integration.md)。
-原生宿主 read-only 并非 Docker 全文件隔离；见 [安全边界](security.md)。官方
-[app-server](https://learn.chatgpt.com/docs/app-server) 和 [权限](https://learn.chatgpt.com/docs/permissions)
-文档随版本演进，不能把新字段盲加到旧 binary 当成已经生效。
+Hooks 仅显式 --hooks 启用且须官方精确定义信任；缺回调时 Exec 元数据、MCP 回执和显式归档照常。
+普通未绑定 IDE 聊天不自动记录，见 [Hooks兼容性](hooks-compatibility.md)。
+Usage 是官方报告值，completed turns 只是请求下界，不是账单。完整答案只在内存交给 oracle，
+官方失败事件只保留已知错误码及限额/认证/传输等枚举分类，原始错误正文和地址不落报告。
+事件仅存白名单元数据；真实在线验收只发送受管 Fixture。

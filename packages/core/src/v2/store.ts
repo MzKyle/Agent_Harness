@@ -3,6 +3,7 @@ import { mkdir, writeFile, rename, readFile, readdir, lstat, open, unlink } from
 import path from 'node:path';
 import { canonicalRoot, checkedPath, isWithin, readBounded } from '../safety.js';
 import { HarnessError } from './contracts.js';
+import { setTimeout as delay } from 'node:timers/promises';
 
 export const digest = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export const newId = (prefix: string) => `${prefix}-${randomUUID().replaceAll('-', '')}`;
@@ -59,10 +60,14 @@ export class StateStore {
     let handle;
     try { handle = await open(file, 'wx'); }
     catch { throw new HarnessError('CONCURRENT_TASK_MUTATION', 'Wait for the pending operation; after a process crash, review the managed lock before removing it'); }
-    try { return await action(); } finally { await handle.close(); await unlink(file); }
+    try {
+      await handle.writeFile(JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString(), id }));
+      return await action();
+    } finally { await handle.close(); await unlink(file); }
   }
   async denial(record: { code: string; tool?: string; command?: string; operation?: string; taskId?: string | null }) {
-    return this.locked('denial-audit', async () => {
+    const deadline = Date.now() + 1500;
+    const append = async () => this.locked('denial-audit', async () => {
       const bucket = await this.directory('artifacts/denials');
       const entries = await readdir(bucket);
       if (entries.length >= 500) {
@@ -74,6 +79,10 @@ export class StateStore {
       const artifact = `artifacts/denials/${newId('execution')}.json`;
       await this.put(artifact, { ...record, status: 'denied', at: new Date().toISOString() }); return artifact;
     });
+    for (;;) try { return await append(); } catch (error) {
+      if (!(error instanceof HarnessError) || error.code !== 'CONCURRENT_TASK_MUTATION' || Date.now() >= deadline) throw error;
+      await delay(15);
+    }
   }
   async list<T>(kind: string): Promise<T[]> {
     const entries = await readdir(await checkedPath(this.root, kind));

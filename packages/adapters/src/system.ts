@@ -23,7 +23,9 @@ export async function engineeringSystem(home: string) {
   const onboarding = new ProjectOnboarding(intelligence, identities, registry, profiles, capabilities, workspaces, tasks);
   const portability = new PortableState(intelligence);
   const work = new WorkSessions(intelligence, identities, registry, tasks, workspaces, memory, history);
-  context.workContext = id => work.context(id);
+  memory.onDeleted = id => work.forgetCandidate(id);
+  history.workOutstanding = async taskId => { const task = await tasks.get(taskId); return (await work.list(task.projectId)).find(item => item.taskId === taskId)?.outstanding ?? []; };
+  context.workContext = (id, query) => work.context(id, query);
   const runtime = new RuntimeDiagnostics(intelligence, identities, execution.evidence, workspaces, [alsRuntimeAdapter]);
   const validator = new WorkflowValidator(intelligence, tasks, registry, workspaces);
   capabilities.runtimeStatus = async id => {

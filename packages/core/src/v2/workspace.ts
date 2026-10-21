@@ -10,6 +10,23 @@ import { engineeringFiles, engineeringSkill, inspectEngineeringContent } from '.
 
 export class WorkspaceManager {
   constructor(readonly store: StateStore, readonly registry: ExternalRegistry) {}
+  async markProvisionedContext(id: string, file: string, hash: string) {
+    if (!engineeringSkill(file) || !/^[a-f0-9]{64}$/.test(hash)) throw new HarnessError('MANAGED_CONTEXT_FILE_DENIED');
+    const workspace = await this.get(id); const root = await this.root(id);
+    if (digest(await readFile(await checkedPath(root, file))) !== hash) throw new HarnessError('MANAGED_CONTEXT_HASH_MISMATCH');
+    try { git(root, ['cat-file', '-e', `${workspace.baseline}:${file}`]); return { reusedSourceContext: true }; } catch { /* Only additional context is separated from the source patch. */ }
+    const files = await this.provisionedContext(id); files[file] = hash;
+    const payload = { workspaceId: id, files, authority: 'context-only; never an execution grant' };
+    await this.store.put(`managed-context/${id}.json`, { ...payload, signature: await this.store.sign(payload) });
+    return { provisioned: true };
+  }
+  private async provisionedContext(id: string): Promise<Record<string, string>> {
+    try {
+      const { signature, ...payload } = await this.store.get<{ workspaceId: string; files: Record<string, string>; authority: string; signature: string }>(`managed-context/${id}.json`);
+      if (!await this.store.verify(payload, signature) || payload.workspaceId !== id || Object.entries(payload.files).some(([file, hash]) => !engineeringSkill(file) || !/^[a-f0-9]{64}$/.test(hash))) throw new HarnessError('MANAGED_CONTEXT_INTEGRITY_FAILED');
+      return payload.files;
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error; }
+  }
   async create(projectId: string, requested = 'HEAD', options: { includeEngineeringSkills?: boolean } = {}) {
     const project = await this.registry.get(projectId); const sha = revision(project.root, requested);
     const id = newId('workspace'); const directory = await this.store.directory(`workspaces/${id}/code`);
@@ -114,8 +131,13 @@ export class WorkspaceManager {
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
     }
     if (files.length) git(root, ['add', '--all', '--force', '--', ...files]);
-    const raw = git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--binary', workspace.baseline]).toString();
+    let raw = git(root, ['diff', '--cached', '--no-ext-diff', '--no-textconv', '--binary', workspace.baseline]).toString();
     if (Buffer.byteLength(raw) > 1024 * 1024) throw new HarnessError('DIFF_SIZE_LIMIT');
+    const provisioned: string[] = [];
+    for (const [file, hash] of Object.entries(await this.provisionedContext(id))) {
+      try { if (digest(await readFile(await checkedPath(root, file))) === hash) provisioned.push(file); } catch { /* A changed/deleted context file stays visible in the patch. */ }
+    }
+    raw = raw.split(/(?=^diff --git )/m).filter(section => !provisioned.some(file => section.startsWith(`diff --git a/${file} b/${file}\n`))).join('');
     const sensitiveScan = raw.split(/(?=^diff --git )/m).filter(section => {
       if (!section.startsWith('diff --git a/docs/agent-capabilities.json b/docs/agent-capabilities.json\n')) return true;
       try { inspectEngineeringContent('docs/agent-capabilities.json', git(root, ['show', ':docs/agent-capabilities.json']).toString()); }
@@ -124,10 +146,10 @@ export class WorkspaceManager {
     }).join('');
     const filtered = filterContent(sensitiveScan);
     if (filtered.redactions) throw new HarnessError('SENSITIVE_DIFF_REFUSED');
-    const changedFiles = git(root, ['diff', '--cached', '--name-only', '-z', workspace.baseline]).toString().split('\0').filter(Boolean);
+    const changedFiles = git(root, ['diff', '--cached', '--name-only', '-z', workspace.baseline]).toString().split('\0').filter(file => Boolean(file) && !provisioned.includes(file));
     const artifact = `artifacts/${id}/changes.patch`; await this.store.put(artifact, raw);
     return { workspaceId: id, sourceRevision: workspace.sourceRevision, workspaceRevision: await this.workingRevision(id),
-      changedFiles, unifiedDiff: raw, artifact, sourceModified: false, warnings: workspace.excluded.length ? ['Snapshot excluded files; validate against full project before applying'] : [] };
+      changedFiles, harnessProvisionedContext: provisioned, unifiedDiff: raw, artifact, sourceModified: false, warnings: workspace.excluded.length ? ['Snapshot excluded files; validate against full project before applying'] : [] };
   }
   async cleanup(id: string) {
     const workspace = await this.get(id);
