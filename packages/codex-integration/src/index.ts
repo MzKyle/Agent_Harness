@@ -1,24 +1,28 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readFile } from 'node:fs/promises';
+import { readFile, lstat } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
-import { StateStore, ExternalRegistry, WorkspaceManager, TaskService, ProjectIdentities, HarnessError, newId, digest, revision } from '@devagent/core';
+import { StateStore, ExternalRegistry, WorkspaceManager, TaskService, ProjectIdentities, HarnessError, newId, digest, revision, isWithin, checkedPath, readMcpReceipts } from '@devagent/core';
 import { NativeRpc } from './rpc.js';
 import { nativeExec } from './events.js';
+import { unlink } from 'node:fs/promises';
+import { provisionNativeSkill, nativeSkillRelative } from './skill.js';
+import { authenticationHome, authenticationLock, contextTools as safeTools, runtimeConfiguration, configurationArgs, toml, type Attachment } from './runtime.js';
+export { authenticationHome, authenticationLock, runtimeConfiguration, configurationArgs } from './runtime.js';
+export type { Attachment } from './runtime.js';
+export { useCodex, dailyMode, dailyStatus, hookAction } from './daily.js';
 export { runNativeWork } from './workflow.js';
-export { installWorkHooks } from './hooks.js';
+export { installWorkHooks, inspectWorkHooks, disableWorkHooks, workHookConfiguration, bindWorkHookExecution, resolveWorkHookExecution } from './hooks.js';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
-export function nativeEnvironment(home: string): NodeJS.ProcessEnv {
-  const environment: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: home, USERPROFILE: home, CODEX_HOME: home, DSH_TELEMETRY_DISABLED: '1' };
+export function nativeEnvironment(home: string, userHome = home): NodeJS.ProcessEnv {
+  const environment: NodeJS.ProcessEnv = { PATH: process.env.PATH, SystemRoot: process.env.SystemRoot, WINDIR: process.env.WINDIR, TEMP: process.env.TEMP, TMP: process.env.TMP, HOME: userHome, USERPROFILE: userHome, CODEX_HOME: home, DSH_TELEMETRY_DISABLED: '1' };
   // Preserve explicit network routing/trust configuration in process memory only, never in artifacts.
   for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'ALL_PROXY', 'NO_PROXY', 'https_proxy', 'http_proxy', 'all_proxy', 'no_proxy', 'CODEX_CA_CERTIFICATE', 'SSL_CERT_FILE']) if (process.env[name]) environment[name] = process.env[name];
   return environment;
 }
-const safeTools = ['get_context_brief', 'get_developer_profile', 'get_relevant_preferences', 'get_project_profile', 'get_recent_work', 'get_project_capabilities', 'get_project_rules', 'search_code', 'read_code_slice', 'find_symbol', 'get_module_dependencies', 'search_project_memory', 'query_diagnostics', 'get_task_failures'];
-interface Attachment { id: string; projectId: string; workspaceId: string; taskId: string; cwd: string; home: string; executable: string; sourceSharingAllowed: boolean; personalContext: boolean; createdAt?: string }
 interface Receipt { tool: string; status: string; taskId: string; projectId: string; sourcePaths: string[]; recentStates: string[]; at: string; signature: string }
 export function checkNativeAnswer(answer: unknown, projectId: string, currentRevision: string, receipts: Pick<Receipt, 'tool' | 'sourcePaths' | 'recentStates'>[]) {
   if (!answer || typeof answer !== 'object') return false;
@@ -47,19 +51,115 @@ export class CodexNativeIntegration {
     const content = await readFile(path.join(root, 'skills/devagent-project-engineering/SKILL.md'), 'utf8');
     await this.store.put(`runtime/codex-native/${id}/home/skills/devagent-project-engineering/SKILL.md`, content);
     await this.store.put(`runtime/codex-native/${id}/home/.agents/skills/devagent-project-engineering/SKILL.md`, content);
+    const skill = await provisionNativeSkill(this.store, this.workspaces, workspace.id, content);
     const auth = options.authFrom ? await this.get(options.authFrom) : null;
     if (auth) {
       const owner = await this.registry.get(auth.projectId);
       if (record.kind !== 'fixture' || record.sourceSharing !== 'fixture-only' || owner.kind !== 'fixture' || owner.sourceSharing !== 'fixture-only') throw new HarnessError('NATIVE_AUTH_REFERENCE_SCOPE_DENIED');
     }
-    const attachment: Attachment = { id, projectId: identity.stableProjectId, workspaceId: workspace.id, taskId: task.id, cwd, home: auth?.home ?? home, executable: auth?.executable ?? options.executable ?? 'codex', sourceSharingAllowed: record.kind === 'fixture' && record.sourceSharing === 'fixture-only', personalContext: Boolean(options.includePreferences), createdAt: new Date().toISOString() };
+    const authHome = auth ? authenticationHome(auth) : await this.store.directory(`runtime/codex-authentication/${newId('authentication')}/home`);
+    if (!auth) await this.store.put(`${path.relative(this.store.root, authHome).split(path.sep).join('/')}/config.toml`, 'cli_auth_credentials_store = "file"\n[history]\npersistence = "none"\n[analytics]\nenabled = false\n[features]\nhooks = false\n');
+    const attachment: Attachment = { id, projectId: identity.stableProjectId, workspaceId: workspace.id, taskId: task.id, cwd, home, authHome, skillPath: skill.path, skillHash: skill.hash, authenticationContextId: `authentication-${digest(authHome).slice(0, 32)}`, executable: auth?.executable ?? options.executable ?? 'codex', sourceSharingAllowed: record.kind === 'fixture' && record.sourceSharing === 'fixture-only', personalContext: Boolean(options.includePreferences), createdAt: new Date().toISOString() };
     await this.store.put(`runtime/codex-native/${id}.json`, attachment);
-    return { ...attachment, globalConfigurationChanged: false, hostAuthenticationImported: false, authenticationProfileReference: options.authFrom ?? null, configArtifact: `runtime/codex-native/${id}/home/config.toml` };
+    await this.store.put(`runtime/codex-native/${id}.signature.json`, { signature: await this.store.sign(attachment) });
+    await this.authenticationContext(attachment);
+    return { ...attachment, globalConfigurationChanged: false, hostAuthenticationImported: false, authenticationProfileReference: options.authFrom ?? null, configArtifact: `runtime/codex-native/${id}/home/config.toml`, effectiveConfiguration: 'complete per-invocation overrides; exec ignores authentication HOME config' };
   }
-  private environment(home: string): NodeJS.ProcessEnv {
-    return nativeEnvironment(home);
+  private environment(home: string, userHome = home): NodeJS.ProcessEnv {
+    return nativeEnvironment(home, userHome);
   }
-  async get(id: string): Promise<Attachment> { if (!/^attachment-[a-f0-9]{32}$/.test(id)) throw new HarnessError('CODEX_ATTACHMENT_ID_DENIED'); return this.store.get(`runtime/codex-native/${id}.json`); }
+  async authenticationContext(attachment: Attachment) {
+    const home = authenticationHome(attachment); const id = `authentication-${digest(home).slice(0, 32)}`;
+    const config = `${path.relative(this.store.root, home).split(path.sep).join('/')}/config.toml`;
+    const configurationText = await this.store.text(config); const configHash = digest(configurationText); const file = `runtime/authentication-contexts/${id}.json`;
+    try {
+      const { signature, ...payload } = await this.store.get<{ id: string; home: string; configurationHash: string; signature: string }>(file);
+      if (!await this.store.verify(payload, signature) || payload.id !== id || payload.home !== home) throw new HarnessError('NATIVE_AUTH_CONTEXT_CONFIGURATION_CHANGED');
+      const presentationSuffix = '\n[tui]\nscreen_reader_detection_done = true\n';
+      const knownPresentationOnly = configurationText.endsWith(presentationSuffix) && digest(configurationText.slice(0, -presentationSuffix.length)) === payload.configurationHash;
+      if (payload.configurationHash !== configHash && !knownPresentationOnly) throw new HarnessError('NATIVE_AUTH_CONTEXT_CONFIGURATION_CHANGED', 'Shared managed authentication HOME config changed; review it before creating a new explicit context. Credentials were not inspected.');
+      if (payload.configurationHash !== configHash) {
+        const observation = { id, pinnedConfigurationHash: payload.configurationHash, observedConfigurationHash: configHash, acceptedPresentationMetadata: ['tui.screen_reader_detection_done'], at: new Date().toISOString(), authenticationConfigRewritten: false };
+        await this.store.put(`runtime/authentication-ui-observations/${id}.json`, { ...observation, signature: await this.store.sign(observation) });
+      }
+      return { id, configurationHash: payload.configurationHash, observedConfigurationHash: configHash, acceptedPresentationMetadata: payload.configurationHash !== configHash ? ['tui.screen_reader_detection_done'] : [], sharing: 'authentication only; execution config is complete per invocation' };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      const payload = { id, home, configurationHash: configHash }; await this.store.put(file, { ...payload, signature: await this.store.sign(payload) });
+      return { id, configurationHash: configHash, sharing: 'authentication only; execution config is complete per invocation' };
+    }
+  }
+  async get(id: string): Promise<Attachment> {
+    if (!/^attachment-[a-f0-9]{32}$/.test(id)) throw new HarnessError('CODEX_ATTACHMENT_ID_DENIED');
+    const attachment = await this.store.get<Attachment>(`runtime/codex-native/${id}.json`);
+    if (attachment.id !== id) throw new HarnessError('CODEX_ATTACHMENT_ID_DENIED');
+    let signedAttachment: { signature: string } | null = null;
+    try { signedAttachment = await this.store.get<{ signature: string }>(`runtime/codex-native/${id}.signature.json`); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    if (attachment.authHome || signedAttachment) {
+      if (!signedAttachment || !await this.store.verify(attachment, signedAttachment.signature)) throw new HarnessError('CODEX_ATTACHMENT_INTEGRITY_FAILED');
+    }
+    for (const home of [attachment.home, authenticationHome(attachment)]) {
+      if (!isWithin(path.join(this.store.root, 'runtime/codex-native'), home) && !(home === authenticationHome(attachment) && isWithin(path.join(this.store.root, 'runtime/codex-authentication'), home))) throw new HarnessError('CODEX_AUTHENTICATION_HOME_DENIED');
+      await checkedPath(this.store.root, path.relative(this.store.root, home));
+    }
+    const workspace = await this.workspaces.get(attachment.workspaceId);
+    if ((await this.identities.resolve(workspace.projectId)).stableProjectId !== attachment.projectId || attachment.cwd !== await this.workspaces.root(workspace.id)) throw new HarnessError('CODEX_WORKSPACE_PROJECT_MISMATCH');
+    if (attachment.skillPath && (attachment.skillPath !== path.join(attachment.cwd, nativeSkillRelative) || digest(await readFile(await checkedPath(this.store.root, path.relative(this.store.root, attachment.skillPath)))) !== attachment.skillHash)) throw new HarnessError('NATIVE_SKILL_INTEGRITY_FAILED');
+    return attachment;
+  }
+  async executionConfiguration(id: string, taskId: string, tools: string[], options: Parameters<typeof runtimeConfiguration>[4] = {}) {
+    const attachment = await this.get(id); const task = await this.tasks.get(taskId); const record = await this.registry.get(attachment.projectId);
+    if (options.hooks && (await this.hookIsolation(id)).status !== 'passed') throw new HarnessError('HOOK_AUTH_CONTEXT_ISOLATION_BLOCKED', 'Official runtime merges authentication HOME hooks.json. Use a fresh dedicated managed login for Hooks; shared legacy files are not modified. Runs without Hooks remain available.');
+    const authenticationContextConfiguration = await this.authenticationContext(attachment);
+    if ((await this.identities.resolve(task.projectId)).stableProjectId !== attachment.projectId || task.workspaceId !== attachment.workspaceId) throw new HarnessError('CODEX_TASK_SCOPE_DENIED');
+    const configuration = runtimeConfiguration(this.store.root, { ...attachment, sourceSharingAllowed: record.kind === 'fixture' && record.sourceSharing === 'fixture-only' }, taskId, tools, options);
+    const sessionId = newId('native-session'); const artifact = `runtime/codex-executions/${sessionId}.json`;
+    const payload = { sessionId, attachmentId: id, authenticationContextId: attachment.authenticationContextId ?? `authentication-${digest(authenticationHome(attachment)).slice(0, 32)}`, authenticationContextConfiguration, projectId: attachment.projectId, taskId, ownerPid: process.pid, purpose: options.purpose ?? 'execution', configuration, at: new Date().toISOString() };
+    await this.store.put(artifact, { ...payload, signature: await this.store.sign(payload) });
+    return { sessionId, artifact, args: configurationArgs(configuration), configurationHash: digest(toml(configuration)) };
+  }
+  async hookIsolation(id: string) {
+    const attachment = await this.get(id);
+    try {
+      await lstat(path.join(authenticationHome(attachment), 'hooks.json'));
+      return { status: 'blocked' as const, reason: 'Authentication HOME contains hooks.json; official runtime merges it with session definitions. A fresh dedicated managed login is required for isolated Hooks.', authenticationHooksFilePresent: true, authenticationConfigChanged: false };
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    return { status: 'passed' as const, reason: null, authenticationHooksFilePresent: false, authenticationConfigChanged: false };
+  }
+  processJournal(sessionId: string) {
+    let pid: number | null = null;
+    const write = async (state: 'running' | 'closed', code: number | null = null) => {
+      if (!/^native-session-[a-f0-9]{32}$/.test(sessionId)) throw new HarnessError('NATIVE_SESSION_ID_DENIED');
+      const { signature, ...execution } = await this.store.get<{ authenticationContextId: string; ownerPid: number; taskId: string; signature: string }>(`runtime/codex-executions/${sessionId}.json`);
+      if (!await this.store.verify(execution, signature)) throw new HarnessError('NATIVE_SESSION_INTEGRITY_FAILED');
+      const payload = { sessionId, authenticationContextId: execution.authenticationContextId, ownerPid: execution.ownerPid, taskId: execution.taskId, pid, state, code, at: new Date().toISOString() };
+      await this.store.put(`runtime/native-processes/${sessionId}.json`, { ...payload, signature: await this.store.sign(payload) });
+    };
+    return { started: async (value: number) => { pid = value; await write('running'); }, closed: async (code: number | null) => { await write('closed', code); } };
+  }
+  async recoverAuthentication(id: string) {
+    const attachment = await this.get(id); const lockId = authenticationLock(attachment); const context = await this.authenticationContext(attachment);
+    const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; } };
+    return this.store.locked(`native-recovery-${digest(authenticationHome(attachment))}`, async () => {
+      let owner: { pid: number; startedAt: string };
+      try { owner = JSON.parse(await this.store.text(`locks/${lockId}.lock`)); }
+      catch (error) { return { status: (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'unlocked' : 'review-required', permissionsRestored: false }; }
+      if (!Number.isSafeInteger(owner.pid) || owner.pid <= 0 || !owner.startedAt || alive(owner.pid)) return { status: 'blocked', reason: 'Owner is alive or cannot be identified', permissionsRestored: false };
+      await this.store.directory('runtime/native-processes'); const records = await this.store.list<{ sessionId: string; authenticationContextId: string; ownerPid: number; pid: number; state: string; signature: string }>('runtime/native-processes');
+      const owned = records.filter(item => item.authenticationContextId === context.id && item.ownerPid === owner.pid);
+      const sessions = (await this.store.list<{ sessionId: string; ownerPid: number; authenticationContextId: string; purpose?: string }>('runtime/codex-executions')).filter(item => item.ownerPid === owner.pid && item.authenticationContextId === context.id && item.purpose === 'execution');
+      if (!sessions.length && !owned.length) return { status: 'review-required', reason: 'No execution/process journal identifies this dead owner; review the lock manually', permissionsRestored: false };
+      if (sessions.some(item => !owned.some(record => record.sessionId === item.sessionId))) return { status: 'review-required', reason: 'An execution has no child-process journal; cannot prove it stopped', permissionsRestored: false };
+      for (const record of owned) {
+        const { signature, ...payload } = record;
+        if (!await this.store.verify(payload, signature)) throw new HarnessError('NATIVE_PROCESS_INTEGRITY_FAILED');
+        if (record.state !== 'closed' && (!Number.isSafeInteger(record.pid) || alive(record.pid))) return { status: 'blocked', reason: 'A known native child is still alive or unidentifiable; no process is killed automatically', permissionsRestored: false };
+      }
+      await unlink(this.store.resolve(`locks/${lockId}.lock`));
+      return { status: 'recovered', permissionsRestored: false, processesKilled: 0 };
+    });
+  }
   async latest(project: string) {
     const stable = (await this.identities.resolve(project)).stableProjectId; await this.store.directory('runtime/codex-native');
     const records = await this.store.list<Attachment>('runtime/codex-native');
@@ -68,20 +168,21 @@ export class CodexNativeIntegration {
   }
   async inspect(id: string) {
     const attachment = await this.get(id); await this.workspaces.get(attachment.workspaceId);
-    const version = spawnSync(attachment.executable, ['--version'], { env: this.environment(attachment.home), cwd: attachment.cwd, encoding: 'utf8', timeout: 15000, windowsHide: true });
+    const version = spawnSync(attachment.executable, ['--version'], { env: this.environment(authenticationHome(attachment), attachment.home), cwd: attachment.cwd, encoding: 'utf8', timeout: 15000, windowsHide: true });
     if (version.status !== 0) throw new HarnessError('CODEX_NATIVE_UNAVAILABLE');
-    const current = await this.registry.get(attachment.projectId);
-    const mcpArgs = [path.join(root, 'packages/diagnostics-mcp/dist/main.js'), '--home', this.store.root, '--project', attachment.projectId, '--task', attachment.taskId, ...(attachment.personalContext ? ['--personal-context'] : [])];
-    const rpc = new NativeRpc(attachment.executable, attachment.cwd, this.environment(attachment.home), ['-c', `mcp_servers.devagent.args=${JSON.stringify(mcpArgs)}`, '-c', `mcp_servers.devagent.enabled=${current.kind === 'fixture' && current.sourceSharing === 'fixture-only'}`]);
+    const execution = await this.executionConfiguration(id, attachment.taskId, safeTools, { skill: true, purpose: 'inspection' });
+    const rpc = new NativeRpc(attachment.executable, attachment.cwd, this.environment(authenticationHome(attachment), attachment.home), execution.args);
     try {
       await rpc.request('initialize', { clientInfo: { name: 'devagent-native-inspector', version: '0.3.0' }, capabilities: { experimentalApi: false } }); rpc.notify('initialized');
-      const skills = await rpc.request<{ data?: { skills?: { name: string; enabled: boolean }[]; errors?: unknown[] }[] }>('skills/list', { cwds: [attachment.cwd], forceReload: true });
+      const skills = await rpc.request<{ data?: { skills?: { name: string; enabled: boolean; path?: string }[]; errors?: unknown[] }[] }>('skills/list', { cwds: [attachment.cwd], forceReload: true });
       const servers = await rpc.request<{ data?: { name: string; tools?: Record<string, unknown> }[] }>('mcpServerStatus/list', { limit: 100 });
       const account = await rpc.request<{ account?: unknown }>('account/read', { refreshToken: false });
       const models = await rpc.request<{ data?: { id: string; isDefault: boolean }[] }>('model/list', { limit: 30 });
       const names = skills.data?.flatMap(entry => entry.skills?.filter(skill => skill.enabled).map(skill => skill.name) ?? []) ?? [];
+      const scopedSkills = skills.data?.flatMap(entry => entry.skills?.filter(skill => skill.enabled && skill.name === 'devagent-project-engineering') ?? []) ?? [];
+      if (scopedSkills.some(skill => skill.path !== attachment.skillPath)) throw new HarnessError('NATIVE_SKILL_SCOPE_DENIED');
       const server = servers.data?.find(server => server.name === 'devagent'); const tools = Object.keys(server?.tools ?? {});
-      const result = { attachmentId: id, nativeVersion: version.stdout.trim(), freshAppServer: true, skillDiscovered: names.includes('devagent-project-engineering'), skillNames: [...new Set(names)].slice(0, 30),
+      const result = { attachmentId: id, nativeVersion: version.stdout.trim(), freshAppServer: true, skillDiscovered: scopedSkills.some(skill => skill.path === attachment.skillPath), skillNames: [...new Set(names)].slice(0, 30),
         mcpDiscovered: tools.includes('get_context_brief'), toolNames: tools, authentication: account.account ? 'authenticated' : 'blocked_by_auth',
         defaultModel: models.data?.find(item => item.isDefault)?.id ?? null, modelToolUse: 'not-proven', globalConfigurationChanged: false, hostAuthenticationImported: false };
       await this.store.put(`reports/${id}.native-inspection.json`, result); return result;
@@ -89,7 +190,7 @@ export class CodexNativeIntegration {
   }
   async session(id: string) {
     const attachment = await this.get(id);
-    return this.store.locked(`native-${digest(attachment.home)}`, () => this.contextSession(id));
+    return this.store.locked(authenticationLock(attachment), () => this.contextSession(id));
   }
   private async contextSession(id: string) {
     const attachment = await this.get(id); const inspected = await this.inspect(id);
@@ -99,13 +200,13 @@ export class CodexNativeIntegration {
       const task = await this.tasks.get(attachment.taskId); task.state = 'blocked'; task.reason = status; task.finishedAt = new Date().toISOString(); await this.tasks.save(task); await this.tasks.report(task.id);
       const report = { status, attachmentId: id, taskId: task.id, modelCalls: 0, discovery: inspected }; await this.store.put(`reports/${id}.native-session.json`, report); return report;
     }
-    const prompt = `Use $devagent-project-engineering. Call get_context_brief for project ${attachment.projectId}; then get_recent_work and a specific source query. Return only JSON {projectId,currentRevision,sourcePath,forbiddenOperations,recentWorkStates}. forbiddenOperations must include hardware, production, source-write. recentWorkStates must exactly list the states returned by get_recent_work in order. Use actual tool data. Do not edit files, execute commands or read other projects.`;
-    const args = [path.join(root, 'packages/diagnostics-mcp/dist/main.js'), '--home', this.store.root, '--project', attachment.projectId, '--task', attachment.taskId, ...(attachment.personalContext ? ['--personal-context'] : [])];
-    const result = await nativeExec(attachment.executable, ['exec', '--ephemeral', '--json', '--sandbox', 'read-only', '-C', attachment.cwd, '-c', `mcp_servers.devagent.args=${JSON.stringify(args)}`, '-c', `mcp_servers.devagent.enabled_tools=${JSON.stringify(safeTools)}`, prompt], attachment.cwd, this.environment(attachment.home));
+    const prompt = `${inspected.skillDiscovered ? 'Use $devagent-project-engineering.' : 'Use the scoped Harness MCP; no native Skill is currently discovered.'} Call get_context_brief for project ${attachment.projectId}; then get_recent_work and a specific source query. Return only JSON {projectId,currentRevision,sourcePath,forbiddenOperations,recentWorkStates}. forbiddenOperations must include hardware, production, source-write. recentWorkStates must exactly list the states returned by get_recent_work in order. Use actual tool data. Do not edit files, execute commands or read other projects.`;
+    const execution = await this.executionConfiguration(id, attachment.taskId, safeTools, { skill: true });
+    const result = await nativeExec(attachment.executable, ['exec', '--ignore-user-config', '--ignore-rules', '--ephemeral', '--json', '--sandbox', 'read-only', '-C', attachment.cwd, ...execution.args, prompt], attachment.cwd, this.environment(authenticationHome(attachment), attachment.home), undefined, this.processJournal(execution.sessionId));
     const completedTurns = result.completedTurns;
     const output = JSON.stringify(result.metadata);
     await this.store.put(`artifacts/${id}/native-session.jsonl`, output);
-    const rawReceipts = await this.store.list<Receipt>(`artifacts/${attachment.taskId}/mcp-receipts`).catch(() => []);
+    const rawReceipts = await readMcpReceipts<Receipt>(this.store, attachment.taskId);
     const receipts: Receipt[] = [];
     for (const receipt of rawReceipts) { const { signature, ...payload } = receipt; if (receipt.taskId === attachment.taskId && receipt.projectId === attachment.projectId && await this.store.verify(payload, signature)) receipts.push(receipt); }
     receipts.sort((left, right) => left.at.localeCompare(right.at));
@@ -121,8 +222,10 @@ export class CodexNativeIntegration {
   }
   async login(id: string, method: 'device' | 'browser' = 'device') {
     const attachment = await this.get(id);
-    const result = spawnSync(attachment.executable, ['login', ...(method === 'device' ? ['--device-auth'] : [])], { env: this.environment(attachment.home), cwd: attachment.cwd, stdio: 'inherit', windowsHide: true });
-    return { nativeExitCode: result.status, globalConfigurationChanged: false, home: attachment.home };
+    return this.store.locked(authenticationLock(attachment), async () => {
+      const result = spawnSync(attachment.executable, ['login', ...(method === 'device' ? ['--device-auth'] : [])], { env: this.environment(authenticationHome(attachment), attachment.home), cwd: attachment.cwd, stdio: 'inherit', windowsHide: true });
+      return { nativeExitCode: result.status, globalConfigurationChanged: false, home: authenticationHome(attachment) };
+    });
   }
 }
 export async function probeHarnessMcp(store: StateStore, projectId: string, taskId?: string) {

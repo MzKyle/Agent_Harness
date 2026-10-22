@@ -1,6 +1,6 @@
 # DevAgent-Harness
 
-Scope: V0.4 Codex Native Engineering Workflow and Runtime Diagnostics. Preserve V0.2/V0.3 compatibility.
+Scope: V0.4.1 Daily Engineering Optimization. Preserve V0.2/V0.3/V0.4 compatibility.
 Keep framework-independent engineering logic in core/adapters;
 all DSH-specific imports and configuration belong in dsh-bridge.
 
@@ -35,6 +35,25 @@ all DSH-specific imports and configuration belong in dsh-bridge.
   and protocol revisions. Do not claim efficiency from one pair or from tool discovery.
 - Use temporary fixture copies in tests; do not initialize real business projects implicitly.
 - Keep files below 1500 lines. Preserve existing user changes and configurations.
+- Authentication HOME is an explicitly selected managed context, never a configuration-sharing shortcut.
+  Separate attachment config; exec ignores user config and passes complete scoped overrides.
+  Pin shared config, serialize model runs, never copy/link/scan credential files.
+- Separate session lifecycle, engineering outcome and evidence validity. Recheck final revision,
+  command definitions and source integrity; model answers and Hooks cannot verify code.
+- Never discard unresolved progress to fit a record window; reject overflow before mutation.
+  Validate stored Work signatures before scoping source/evidence rechecks to the selected project.
+- Replay signed Work journals; only identified dead local locks may be recovered. Recovery,
+  resume, archives and portable history never recreate execution or sharing grants.
+- Modes reduce context/tool exposure only. No paid classification; Fast keeps every safety gate.
+  Cache bounded task/project/revision-scoped reads only, invalidate on edits, retain signed receipts.
+- Hooks are explicit and reversible; require official exact-definition trust. Never bypass it or
+  invent callbacks. Ordinary IDE support remains client/version-dependent.
+- Retain failures and protocol versions in paired evaluations. Separate equal-information
+  overhead from natural discovery; official usage is not billed tokens or exact requests.
+- Diagnose asynchronous mismatch only with trusted clocks, sources, timestamps and repeated
+  samples beyond propagation delay; otherwise report uncertainty, transient or stale observations.
+- Keep reviewable local archives and original audit. The optional Python image tests
+  Harness-owned fakes only; it does not authorize ALS business tests.
 - Before delivery run: pnpm typecheck; pnpm lint; pnpm test; pnpm build; pnpm test:integration.
 - Report actual checks, external integrations not verified, and platform limitations honestly.
 - For interactive Windows security dialogs, initiate the authorized action and ask the

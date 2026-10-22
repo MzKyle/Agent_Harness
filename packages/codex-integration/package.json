@@ -1,5 +1,5 @@
 {
-  "name": "@devagent/codex-integration", "version": "0.4.0", "private": true, "type": "module",
+  "name": "@devagent/codex-integration", "version": "0.4.1", "private": true, "type": "module",
   "exports": "./dist/index.js", "types": "./dist/index.d.ts",
   "dependencies": { "@devagent/core": "workspace:*", "@modelcontextprotocol/client": "2.2.0" }
 }

@@ -1,2 +1,3 @@
 import { defineConfig } from 'vitest/config';
-export default defineConfig({ test: { include: ['evals/**/*.test.ts'], exclude: ['evals/**/*.integration.test.ts'], testTimeout: 15000 } });
+import { fileURLToPath } from 'node:url';
+export default defineConfig({ resolve: { alias: { '@devagent/core': fileURLToPath(new URL('./packages/core/src/index.ts', import.meta.url)), '@devagent/adapters': fileURLToPath(new URL('./packages/adapters/src/index.ts', import.meta.url)) } }, test: { include: ['evals/**/*.test.ts'], exclude: ['evals/**/*.integration.test.ts'], testTimeout: 15000 } });

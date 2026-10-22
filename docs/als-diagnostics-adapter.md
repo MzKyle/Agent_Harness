@@ -47,6 +47,16 @@ node apps/cli/dist/main.js diagnostics validate --task <task> --home <state>
 它不覆盖 FastAPI 中间件、Electron、Python 调度、CVAT、GPU 或 ALS 的真实数据库迁移。
 独立 `/grader` 只读测试验证 healthy/exception/timeout 四层状态一致；初始失败和模型修复后通过均有签名证据。
 
+V0.4.1 为 v1 快照新增可选 clock domain/trust/skew、state source、observedAt/updatedAt、传播
+延迟策略和重复采样窗口。不同状态先区分 transient-inconsistency、persistent-mismatch、
+stale-observation、illegal-transition、worker-error、insufficient-evidence；只有可信时间及
+超出传播期限的重复分歧才判 persistent。缺时钟或时间戳不能推断因果。旧快照仍可读，旧
+state-mismatch 别名仅对应已确认的持久分歧。真实 fixture 集成额外验证允许延迟的 healthy
+持久化先短暂不同、随后收敛，独立 grader 也保留这条正常路径。
+查询视图按当前已注册 Adapter 重新分析，并标明 analysisVersion=0.4.1；旧快照缺时钟时返回
+insufficient-evidence，不能沿用旧的瞬时不一致结论。get 读取的原签名记录和原输出保持不变。
+Adapter 不再可用时保留历史派生结果并标明 stored-unreclassified，不冒充当前分析。
+
 真实 ALS 尚无本 Harness 可直接授权读取的统一事件流；现有 workflow_id / step_key / heartbeat /
 error_text 可作为适配输入，traceId 不能凭空补造。进一步接入见
 [观测改造候选](proposals/als-runtime-observability.md)，没有应用到业务源。

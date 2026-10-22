@@ -1,4 +1,24 @@
-# Agent_Harness V0.4
+# Agent_Harness V0.4.1
+
+日常入口与本轮结果见 [使用指南](docs/daily-engineering.md)、[配置隔离](docs/configuration-isolation.md)、[实施报告](docs/implementation-v0.4.1.md) 和 [分层验收](docs/verification.md)。
+新增 Fast / Engineering / Deep / 静态 Auto；不增加分类模型请求或 MCP 工具名称。
+会话完成、工程结果和证据状态分别表达；旧认证HOME含Hook文件时阻止启用，空新HOME还需官方登录和定义信任，真回调未验收。
+
+```powershell
+Set-Location E:\Agent_Harness
+node apps/cli/dist/main.js codex use --project <registered-project-id> --mode auto --home <state>
+node apps/cli/dist/main.js codex run --project <approved-fixture-id> --goal '继续上次开发' --mode auto --home <state>
+node apps/cli/dist/main.js codex status --project <registered-project-id> --home <state>
+node apps/cli/dist/main.js work latest --project <registered-project-id> --home <state>
+node apps/cli/dist/main.js doctor --home <state>
+```
+
+`use` 保存显式项目选择并检查现有能力；任务使用 `run`，编码另需 `--coding`、批准的命令和隔离器。
+普通未绑定 IDE 聊天不会自动采集。所有真实业务项目本轮继续仅本地只读。
+本轮最终check通过71单元/30集成；冻结候选42次真实对照通过。单模块Fast相对Engineering
+减少调用，但本样本Baseline整体仍更快；最终项目过滤的本地Work查询中位10.89秒→0.46秒。
+版本范围、样本限制与Hooks blocked分别记录于 [性能](docs/performance-v0.4.1.md) 和分层验收。
+下方 V0.4 能力概述和历史数据不能替代 V0.4.1 的分层结果；认证 HOME 复用的现行边界以配置隔离文档为准。
 
 Codex 的本地个人工程上下文与能力管理系统：开发偏好、项目画像、近期工作、工程规范、能力契约，以及受控的诊断和验证。复用 V0.2 Registry / Task / Workspace / Evidence；DSH 是可选集成，不是画像、记忆和 Onboarding 的依赖。
 
@@ -88,7 +108,7 @@ node apps/cli/dist/main.js codex login-native --id <attachment-id>
 node apps/cli/dist/main.js codex session --id <attachment-id>
 ```
 
-attach 创建独立原生 HOME/CODEX_HOME、官方 MCP 配置和可复用 `devagent-project-engineering` Skill；不改全局配置、不复制宿主认证。inspect 真实启动官方 app-server 检查发现情况，无模型请求。login-native 使用官方交互认证。session 仅允许明确分享的模拟工程，并用服务端签名回执与外部答案核验判断实际调用；没有认证时保留 blocked Task。在线个人偏好需 attach 时额外加 `--include-preferences`。本轮真实 ALS/Pollen 保持 local-only。详见 [原生接入](docs/codex-native.md)。
+attach 分离附件配置与认证上下文，创建官方 MCP 配置，在过滤 Workspace provision 公开 `devagent-project-engineering` Skill；不改全局配置、不复制宿主认证。exec 忽略认证目录用户配置并传完整 scoped overrides，复用登录只共享显式受管认证引用。inspect 真实启动官方 app-server 检查实际 MCP/Skill 路径，无模型请求。login-native 使用官方交互认证。session 仅允许明确分享的模拟工程，并用签名回执与外部答案核验判断实际调用；没有认证时保留 blocked Task。在线个人偏好需额外 `--include-preferences`。ALS/Pollen 本轮保持 local-only。详见 [原生接入](docs/codex-native.md)。
 
 MCP 提供预算化 context brief、画像/近期工作/相关偏好查询、源码/日志工具、候选记忆和 gap 提议。没有人工审批、备份恢复、规范应用或能力采纳工具。Codex 仍负责推理与行动循环。
 

@@ -57,7 +57,7 @@ export class ExecutionEngine {
     const name = `devagent-${id.slice(10)}`; let created = false;
     const lock = this.store.resolve('locks/execution.lock');
     try {
-      if ((await this.evidence.list()).length >= 1000) throw new HarnessError('EVIDENCE_RETENTION_LIMIT', 'Export and archive evidence before running more commands');
+      if (await this.evidence.activeCount() >= 1000) throw new HarnessError('EVIDENCE_RETENTION_LIMIT', 'Review and archive terminal-task evidence before running more commands; source analysis remains available');
       command = await this.approved(workspaceId, commandId);
       if (signal?.aborted) throw new HarnessError('EXECUTION_CANCELLED');
       if (!capability.verified || capability.level !== 'full' || !capability.image) throw new HarnessError('blocked_by_isolation', capability.remedy);

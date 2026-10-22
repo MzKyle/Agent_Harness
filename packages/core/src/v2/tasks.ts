@@ -60,11 +60,15 @@ export class TaskService {
     if (!task.workspaceId || !task.plan) throw new HarnessError('MISSING_FINAL_VERIFICATION');
     const revision = await this.workspaces.workingRevision(task.workspaceId);
     const commands = (await this.store.list<{ workspaceId: string; id: string }>('approvals')).filter(command => command.workspaceId === task.workspaceId);
+    const definitions = new Map(await Promise.all(commands.map(async item => [item.id, await this.execution.approved(task.workspaceId!, item.id)] as const)));
+    const workspace = await this.workspaces.get(task.workspaceId);
     const verified = new Set<string>();
     for (const id of task.evidenceIds) {
       const evidence = await this.execution.evidence.get(id);
       if (evidence.taskId !== task.id || evidence.workspaceId !== task.workspaceId) throw new HarnessError('TASK_EVIDENCE_SCOPE_DENIED');
-      if (await this.execution.evidence.isVerified(id, revision)) verified.add(evidence.commandId);
+      const definition = definitions.get(evidence.commandId);
+      const matchesDefinition = definition && evidence.sourceRevision === workspace.sourceRevision && evidence.command.executable === definition.executable && evidence.command.cwd === definition.cwd && JSON.stringify(evidence.command.args) === JSON.stringify(definition.args);
+      if (matchesDefinition && await this.execution.evidence.isVerified(id, revision)) verified.add(evidence.commandId);
     }
     if (!commands.length || !commands.every(command => verified.has(command.id))) throw new HarnessError('MISSING_FINAL_VERIFICATION');
     await this.workspaces.diff(task.workspaceId);

@@ -33,3 +33,7 @@ export * from './v4/work-capture.js';
 export * from './v4/runtime-diagnostics.js';
 export * from './v4/workflow-validator.js';
 export * from './v4/work-sessions.js';
+export * from './v4/work-recovery.js';
+export * from './v4/engineering-mode.js';
+export * from './v4/mcp-audit.js';
+export * from './v4/health.js';
